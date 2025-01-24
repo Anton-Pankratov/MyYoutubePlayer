@@ -1,0 +1,30 @@
+# macOS system files
+.DS_Store
+Thumbs.db
+
+# Build files and outputs
+/build/
+.cxx/
+.gradle/
+.externalNativeBuild/
+outputs/
+captures/
+buildSrc/build/
+buildSrc/build/classes/kotlin/main/
+
+# IDE configuration
+.idea/
+*.iml
+.vscode/
+
+# System-specific configuration
+local.properties
+app_credentials.properties
+
+# APK and test outputs
+*.apk
+*.ap_
+*.hprof
+
+# Logs
+*.log
