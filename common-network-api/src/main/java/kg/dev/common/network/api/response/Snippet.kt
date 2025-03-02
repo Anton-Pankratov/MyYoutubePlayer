@@ -1,10 +1,14 @@
 package kg.dev.common.network.api.response
 
-sealed class Snippet(open val title: String, open val description: String, open val thumbnails: Thumbnails) {
+sealed class Snippet {
 
     data class Channel(
-        override val title: String,
-        override val description: String,
-        override val thumbnails: Thumbnails
-        ) : Snippet(title, description, thumbnails)
+        val title: String,
+        val thumbnails: Thumbnails,
+        val description: String,
+        val publishedAt: String,
+        val channelId: String,
+        val liveBroadCastContent: String,
+        val publishTime: String
+        ) : Snippet()
 }

@@ -1,12 +1,11 @@
 package kg.dev.common.network.api.response
 
-sealed class Item(open val kind: String, open val snippet: Snippet) {
+sealed class Item {
 
     data class Channel(
-        override val kind: String,
-        override val snippet: Snippet,
+        val kind: String,
+        val snippet: Snippet.Channel,
         val etag: String,
         val id: ItemId,
-        val statistic: Statistics
-    ) : Item(kind, snippet)
+    ) : Item()
 }

@@ -21,5 +21,5 @@ gradlePlugin {
 dependencies {
     implementation("org.jetbrains.kotlin:kotlin-gradle-plugin:2.0.0")
     implementation("com.android.tools.build:gradle:8.7.2")
-    implementation ("org.tomlj:tomlj:1.0.0")
+    implementation("org.tomlj:tomlj:1.0.0")
 }

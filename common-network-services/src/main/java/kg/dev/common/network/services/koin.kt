@@ -5,4 +5,5 @@ import retrofit2.Retrofit
 
 val networkServicesModule = module {
     single { get<Retrofit>().create(YoutubeService::class.java) }
+    factory { (clazz: Class<*>) -> ResponseBodyMapper(clazz) }
 }

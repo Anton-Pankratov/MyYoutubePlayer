@@ -7,4 +7,6 @@
     <string name="profile">Профиль</string>
     <string name="settings">Настройки</string>
     <string name="channels">Каналы</string>
+
+    <string name="input_query">Введите здесь…</string>
 </resources>

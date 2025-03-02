@@ -6,4 +6,6 @@
     <string name="profile">Profile</string>
     <string name="settings">Settings</string>
     <string name="channels">Channels</string>
+
+    <string name="input_query">Input here…</string>
 </resources>

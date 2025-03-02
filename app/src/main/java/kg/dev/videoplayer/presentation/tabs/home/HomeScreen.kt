@@ -7,6 +7,6 @@ import kg.dev.videoplayer.presentation.player.YoutubePlayer
 @Composable
 fun HomeScreen() {
     Surface {
-        YoutubePlayer()
+        //YoutubePlayer()
     }
 }

@@ -1,25 +1,19 @@
 package kg.dev.videoplayer.presentation.tabs.channels
 
-import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import kg.dev.core.repositories.youtube.ChannelsRepository
-import kg.dev.videoplayer.data.Channel
-import kg.dev.videoplayer.data.ChannelsMapper
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.SharedFlow
-import kotlinx.coroutines.launch
+import kg.dev.common.viewmodel.CommonViewModel
+import kg.dev.videoplayer.data.events.AppEvents.Channel.CallNextPage
+import kg.dev.videoplayer.domain.channel.SearchChannelsUseCase
+import kotlinx.coroutines.flow.StateFlow
+import org.koin.core.component.inject
+import org.koin.core.parameter.parametersOf
 
-class ChannelsViewModel(private val repository: ChannelsRepository) : ViewModel() {
+class ChannelsViewModel: CommonViewModel() {
 
-    private val _foundChannels = MutableSharedFlow<List<Channel>?>()
-    val foundChannels: SharedFlow<List<Channel>?> = _foundChannels
+    private val useCase: SearchChannelsUseCase by inject { parametersOf(viewModelScope) }
 
-    init {
-        viewModelScope.launch {
-            val response = repository.findChannels("Education")
-            response?.let {
-                _foundChannels.tryEmit(ChannelsMapper().convert(it))
-            }
-        }
-    }
+    val pageLoad: StateFlow<CallNextPage> = useCase.pageLoad
+    val channels = useCase.channels
+
+    fun findChannels(query: String?) = useCase.findChannels(query)
 }

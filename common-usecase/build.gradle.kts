@@ -1,0 +1,17 @@
+plugins {
+    id("com.android.library")
+    id("build.gradle.plugin.android.library")
+}
+
+android {
+    namespace = "kg.dev.common.usecase"
+}
+
+dependencies {
+
+    api(project(":common-async"))
+
+    implementation(libs.gson)
+
+    testImplementation(libs.junit)
+}

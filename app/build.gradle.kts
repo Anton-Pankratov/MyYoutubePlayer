@@ -30,10 +30,15 @@ android {
 
 
 dependencies {
-
+    implementation(project(":common-events"))
+    implementation(project(":common-logger"))
+    implementation(project(":common-mapper"))
     implementation(project(":common-network-api"))
     implementation(project(":common-network-client"))
     implementation(project(":common-network-services"))
+    implementation(project(":common-paging"))
+    implementation(project(":common-usecase"))
+    implementation(project(":common-viewmodel"))
     implementation(project(":common-utils"))
     implementation(project(":core-repositories"))
 
@@ -48,6 +53,10 @@ dependencies {
     implementation(libs.androidx.material)
     implementation(libs.androidx.material.android)
 
+    implementation(libs.coil.compose)
+    implementation(libs.coil.svg)
+    implementation(libs.coil.network)
+
     implementation(libs.youtube.player)
     implementation(libs.youtube.google.api.service)
     implementation(libs.youtube.google.http.client.android)
@@ -56,6 +65,11 @@ dependencies {
     implementation(libs.koin)
     implementation(libs.koin.compose)
     implementation(libs.navigation.compose)
+
+    implementation(libs.paging)
+    implementation(libs.paging.compose)
+
+    implementation(libs.timber)
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

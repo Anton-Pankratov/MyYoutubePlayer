@@ -28,6 +28,9 @@ android {
 
 dependencies {
 
+    implementation(project(":common-logger"))
+    implementation(project(":common-mapper"))
+
     implementation(libs.koin)
 
     api(libs.retrofit)

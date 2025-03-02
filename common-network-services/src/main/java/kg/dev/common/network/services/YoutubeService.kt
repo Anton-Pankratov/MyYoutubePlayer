@@ -13,6 +13,7 @@ interface YoutubeService {
         @Query("type") type: String,
         @Query("q") query: String,
         @Query("order") order: String = "relevance",
+        @Query("pageToken") nextPageToken: String? = null,
         @Query("maxResults") maxResults: Int = 10,
         @Query("key") key: String = BuildConfig.YOUTUBE_API_KEY
     ): Response<ResponseBody>

@@ -12,6 +12,7 @@ dependencies {
 
     implementation(project(":common-network-api"))
     implementation(project(":common-network-services"))
+    implementation(project(":common-mapper"))
 
     implementation(libs.koin)
     implementation(libs.gson)
