@@ -1,0 +1,18 @@
+ALTER TABLE playbackHistory RENAME TO playbackHistory_legacy;
+
+CREATE TABLE playbackHistory (
+    providerId TEXT NOT NULL,
+    externalId TEXT NOT NULL,
+    title TEXT NOT NULL,
+    thumbnailUrl TEXT,
+    positionMs INTEGER NOT NULL DEFAULT 0,
+    durationMs INTEGER,
+    updatedAtEpochMs INTEGER NOT NULL,
+    PRIMARY KEY(providerId, externalId)
+);
+
+-- Existing installs did not record a provider. Preserve rows under an explicit legacy namespace.
+INSERT INTO playbackHistory(providerId, externalId, title, positionMs, updatedAtEpochMs)
+SELECT 'legacy', mediaId, title, positionMs, updatedAtEpochMs FROM playbackHistory_legacy;
+
+DROP TABLE playbackHistory_legacy;

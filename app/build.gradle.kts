@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     alias(libs.plugins.kotlin.compose)
@@ -10,6 +12,19 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
+    }
+
+    defaultConfig {
+        val apiProperties = Properties()
+        rootProject.file("app_credentials.properties").takeIf { it.isFile }?.inputStream()?.use(apiProperties::load)
+        val youtubeApiKey = providers.environmentVariable("YOUTUBE_DATA_API_V3_API_KEY").orNull
+            ?: apiProperties.getProperty("YOUTUBE_DATA_API_V3_API_KEY").orEmpty()
+        buildConfigField(
+            "String",
+            "YOUTUBE_API_KEY",
+            "\"${youtubeApiKey.replace("\\", "\\\\").replace("\"", "\\\"")}\""
+        )
     }
     composeOptions {
         kotlinCompilerExtensionVersion = "1.5.15"
@@ -26,21 +41,21 @@ android {
         resources.excludes.add("META-INF/NOTICE")
         resources.excludes.add("META-INF/NOTICE.txt")
     }
+
+    sourceSets["main"].java.setSrcDirs(listOf("src/main/kotlin-active"))
 }
 
 
 dependencies {
-    implementation(project(":common-events"))
-    implementation(project(":common-logger"))
-    implementation(project(":common-mapper"))
-    implementation(project(":common-network-api"))
-    implementation(project(":common-network-client"))
-    implementation(project(":common-network-services"))
-    implementation(project(":common-paging"))
-    implementation(project(":common-usecase"))
-    implementation(project(":common-viewmodel"))
-    implementation(project(":common-utils"))
-    implementation(project(":core-repositories"))
+    implementation(project(":shared:core:common"))
+    implementation(project(":shared:core:network"))
+    implementation(project(":shared:core:storage"))
+    implementation(project(":shared:core:di"))
+    implementation(project(":shared:core:ui"))
+    implementation(project(":shared:feature:search"))
+    implementation(project(":shared:feature:player"))
+    implementation(project(":shared:feature:history"))
+    implementation(libs.sqldelight.android.driver)
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
@@ -53,23 +68,8 @@ dependencies {
     implementation(libs.androidx.material)
     implementation(libs.androidx.material.android)
 
-    implementation(libs.coil.compose)
-    implementation(libs.coil.svg)
-    implementation(libs.coil.network)
-
-    implementation(libs.youtube.player)
-    implementation(libs.youtube.google.api.service)
-    implementation(libs.youtube.google.http.client.android)
-    implementation(libs.youtube.google.http.client.gson)
-
     implementation(libs.koin)
     implementation(libs.koin.compose)
-    implementation(libs.navigation.compose)
-
-    implementation(libs.paging)
-    implementation(libs.paging.compose)
-
-    implementation(libs.timber)
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

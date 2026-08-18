@@ -1,0 +1,9 @@
+CREATE TABLE directMediaSource (
+    externalId TEXT NOT NULL PRIMARY KEY,
+    title TEXT NOT NULL,
+    uri TEXT NOT NULL,
+    mimeType TEXT,
+    thumbnailUrl TEXT,
+    authorTitle TEXT,
+    durationMs INTEGER
+);

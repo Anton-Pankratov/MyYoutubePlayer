@@ -1,0 +1,42 @@
+CREATE TABLE playbackHistory (
+    providerId TEXT NOT NULL,
+    externalId TEXT NOT NULL,
+    title TEXT NOT NULL,
+    thumbnailUrl TEXT,
+    positionMs INTEGER NOT NULL DEFAULT 0,
+    durationMs INTEGER,
+    updatedAtEpochMs INTEGER NOT NULL,
+    PRIMARY KEY(providerId, externalId)
+);
+
+CREATE TABLE directMediaSource (
+    externalId TEXT NOT NULL PRIMARY KEY,
+    title TEXT NOT NULL,
+    uri TEXT NOT NULL,
+    mimeType TEXT,
+    thumbnailUrl TEXT,
+    authorTitle TEXT,
+    durationMs INTEGER
+);
+
+upsertDirectMedia:
+INSERT OR REPLACE INTO directMediaSource(externalId, title, uri, mimeType, thumbnailUrl, authorTitle, durationMs)
+VALUES (?, ?, ?, ?, ?, ?, ?);
+
+findDirectMedia:
+SELECT * FROM directMediaSource WHERE externalId = ?;
+
+deleteDirectMedia:
+DELETE FROM directMediaSource WHERE externalId = ?;
+
+selectRecent:
+SELECT * FROM playbackHistory
+ORDER BY updatedAtEpochMs DESC
+LIMIT ?;
+
+upsertHistory:
+INSERT OR REPLACE INTO playbackHistory(providerId, externalId, title, thumbnailUrl, positionMs, durationMs, updatedAtEpochMs)
+VALUES (?, ?, ?, ?, ?, ?, ?);
+
+deleteHistory:
+DELETE FROM playbackHistory WHERE providerId = ? AND externalId = ?;

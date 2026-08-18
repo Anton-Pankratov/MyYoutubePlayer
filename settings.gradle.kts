@@ -1,6 +1,5 @@
-import java.util.Properties
-
 pluginManagement {
+    includeBuild("build-logic")
     repositories {
         google {
             content {
@@ -14,7 +13,10 @@ pluginManagement {
     }
 }
 dependencyResolutionManagement {
-    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    // Kotlin/JS registers its Node distribution as an Ivy project repository.
+    // PREFER_PROJECT keeps that toolchain repository available while dependency
+    // coordinates remain centralized in the version catalog below.
+    repositoriesMode.set(RepositoriesMode.PREFER_PROJECT)
     repositories {
         google()
         mavenCentral()
@@ -24,20 +26,14 @@ dependencyResolutionManagement {
 rootProject.name = "MyYoutubePlayer"
 
 include(":app")
-include(":common-async")
-include(":common-network-client")
-include(":common-network-services")
-include(":common-network-api")
-include(":common-logger")
-include(":common-mapper")
-include(":common-usecase")
-include(":common-paging")
-include(":common-events")
-include(":common-utils")
-include(":common-viewmodel")
-include(":core-repositories")
-
-val properties = Properties()
-file("local.properties").inputStream().use { properties.load(it) }
-
-val youtubeBaseUrl = properties.getProperty("youtubeBaseUrl", "default")
+include(":shared:core:common")
+include(":shared:core:network")
+include(":shared:core:storage")
+include(":shared:core:ui")
+include(":shared:core:di")
+include(":shared:feature:search")
+include(":shared:feature:player")
+include(":shared:feature:history")
+include(":apps:desktopApp")
+include(":apps:webApp")
+include(":apps:iosApp")

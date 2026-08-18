@@ -4,8 +4,10 @@ Thumbs.db
 
 # Build files and outputs
 /build/
+**/build/
 .cxx/
 .gradle/
+.kotlin/
 .externalNativeBuild/
 outputs/
 captures/
