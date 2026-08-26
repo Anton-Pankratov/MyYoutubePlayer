@@ -30,6 +30,8 @@ fun interface HomeMediaAvailability {
 
 interface HomeComponent {
     val state: StateFlow<HomeUiState>
+    val isLocalMediaImportAvailable: Boolean
     fun refresh()
     fun select(item: HomeMediaItemUiModel)
+    fun requestLocalMediaImport()
 }

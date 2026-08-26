@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material3.Icon
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -42,13 +43,20 @@ import kg.dev.shared.feature.home.presentation.HomeUiState
 
 @Composable
 fun HomeContent(component: HomeComponent, modifier: Modifier = Modifier) =
-    HomeContent(component.state.collectAsState().value, component::select, component::refresh, modifier)
+    HomeContent(
+        state = component.state.collectAsState().value,
+        onItemClick = component::select,
+        onRetry = component::refresh,
+        onImportLocalMedia = if (component.isLocalMediaImportAvailable) component::requestLocalMediaImport else null,
+        modifier = modifier
+    )
 
 @Composable
 fun HomeContent(
     state: HomeUiState,
     onItemClick: (HomeMediaItemUiModel) -> Unit,
     onRetry: () -> Unit = {},
+    onImportLocalMedia: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     Box(modifier.fillMaxSize()) {
@@ -58,6 +66,9 @@ fun HomeContent(
             verticalArrangement = Arrangement.spacedBy(MediaSpacing.xxl)
         ) {
             ScreenHeader("Home", "Pick up where you left off or revisit a recent watch.")
+            onImportLocalMedia?.let { onImport ->
+                OutlinedButton(onClick = onImport) { Text("Import video") }
+            }
             when {
                 state.isLoading -> HomeLoading()
                 state.error -> ErrorState(

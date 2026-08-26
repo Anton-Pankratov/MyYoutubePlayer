@@ -40,7 +40,7 @@ fun MainViewController(youtubeApiKey: String): UIViewController {
         MediaAppTheme {
             SharedAppContent(
                 rootComponent = rootComponent,
-                homeComponentFactory = { context, selected ->
+                homeComponentFactory = { context, selected, _ ->
                     DefaultHomeComponent(
                         componentContext = context,
                         historyRepository = koin.get<HistoryRepository>(),

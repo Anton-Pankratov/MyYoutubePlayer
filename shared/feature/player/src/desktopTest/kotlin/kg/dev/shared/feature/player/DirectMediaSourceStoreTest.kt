@@ -55,6 +55,32 @@ class DirectMediaSourceStoreTest {
         )
         assertEquals(PlaybackResolutionError.MediaUnavailable, assertIs<PlaybackResolution.Failed>(result).error); driver.close()
     }
+
+    @Test fun importedContentUriUsesStableApplicationIdentityAfterRestart() = runTest {
+        val file = File.createTempFile("local-media", ".db").also { it.delete() }
+        val externalId = "7b6d58a8-840a-4d41-932a-a0bca6ab6a30"
+        val descriptor = DirectMediaDescriptor(
+            id = externalId,
+            title = "Device video",
+            uri = "content://com.android.providers.media.documents/document/video%3A42",
+            mimeType = "video/mp4",
+            durationMs = 120_000
+        )
+        JdbcSqliteDriver("jdbc:sqlite:${file.absolutePath}").use { driver ->
+            PlayerDatabase.Schema.create(driver)
+            DirectMediaProvider(SqlDelightDirectMediaSourceStore(createPlayerDatabase(driver))).register(descriptor)
+        }
+        JdbcSqliteDriver("jdbc:sqlite:${file.absolutePath}").use { driver ->
+            val provider = DirectMediaProvider(SqlDelightDirectMediaSourceStore(createPlayerDatabase(driver)))
+            val media = kg.dev.shared.core.common.media.MediaCatalogItem(
+                MediaReference(MediaProviders.Direct, externalId),
+                "Stale catalog metadata"
+            )
+            val source = assertIs<PlaybackResolution.Resolved>(provider.resolve(media)).media.source
+            assertEquals(descriptor.uri, assertIs<PlaybackSource.Direct>(source).uri)
+        }
+        file.delete()
+    }
     private fun source(title: String, uri: String, duration: Long?) = StoredDirectMedia("direct-1", title, uri, "video/mp4", "thumb", "author", duration)
     private fun DirectMediaDescriptor.toCatalog() = kg.dev.shared.core.common.media.MediaCatalogItem(MediaReference(MediaProviders.Direct, id), title, thumbnailUrl, authorTitle, durationMs)
 }

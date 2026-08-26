@@ -67,10 +67,27 @@ class HomeComponentTest {
         assertEquals(0, selected?.startPositionMs)
     }
 
+    @Test
+    fun importActionIsExposedOnlyWhenPlatformCapabilityIsSupplied() = runTest {
+        var importRequests = 0
+        val available = component(
+            repository = FakeHistoryRepository(emptyList()),
+            onImport = { importRequests++ }
+        )
+        val unavailable = component(FakeHistoryRepository(emptyList()))
+
+        assertTrue(available.isLocalMediaImportAvailable)
+        assertFalse(unavailable.isLocalMediaImportAvailable)
+        available.requestLocalMediaImport()
+        unavailable.requestLocalMediaImport()
+        assertEquals(1, importRequests)
+    }
+
     private fun kotlinx.coroutines.test.TestScope.component(
         repository: FakeHistoryRepository,
         availability: HomeMediaAvailability = HomeMediaAvailability { true },
-        onSelected: (HomeMediaItemUiModel) -> Unit = {}
+        onSelected: (HomeMediaItemUiModel) -> Unit = {},
+        onImport: (() -> Unit)? = null
     ): DefaultHomeComponent {
         val lifecycle = LifecycleRegistry().also { it.onCreate() }
         return DefaultHomeComponent(
@@ -78,6 +95,7 @@ class HomeComponentTest {
             historyRepository = repository,
             mediaAvailability = availability,
             onItemSelected = onSelected,
+            onLocalMediaImportRequested = onImport,
             coroutineContext = StandardTestDispatcher(testScheduler)
         )
     }

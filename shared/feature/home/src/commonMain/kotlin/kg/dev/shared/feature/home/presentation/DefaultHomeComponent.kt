@@ -21,11 +21,14 @@ class DefaultHomeComponent(
     private val historyRepository: HistoryRepository,
     private val mediaAvailability: HomeMediaAvailability = HomeMediaAvailability { true },
     private val onItemSelected: (HomeMediaItemUiModel) -> Unit = {},
+    private val onLocalMediaImportRequested: (() -> Unit)? = null,
     coroutineContext: CoroutineContext = Dispatchers.Default
 ) : HomeComponent, ComponentContext by componentContext {
     private val scope = CoroutineScope(SupervisorJob() + coroutineContext)
     private val mutableState = MutableStateFlow(HomeUiState())
     override val state: StateFlow<HomeUiState> = mutableState.asStateFlow()
+    override val isLocalMediaImportAvailable: Boolean
+        get() = onLocalMediaImportRequested != null
 
     init {
         lifecycle.subscribe(object : Lifecycle.Callbacks {
@@ -55,6 +58,10 @@ class DefaultHomeComponent(
 
     override fun select(item: HomeMediaItemUiModel) {
         if (item.isAvailable) onItemSelected(item)
+    }
+
+    override fun requestLocalMediaImport() {
+        onLocalMediaImportRequested?.invoke()
     }
 
     private fun toHomeItem(video: WatchedVideo): HomeMediaItemUiModel = HomeMediaItemUiModel(

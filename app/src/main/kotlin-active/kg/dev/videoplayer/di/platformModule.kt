@@ -7,6 +7,8 @@ import kg.dev.shared.core.network.NetworkSettings
 import kg.dev.shared.core.storage.db.PlayerDatabase
 import kg.dev.shared.feature.player.AndroidVideoPlayerController
 import kg.dev.shared.feature.player.VideoPlayerController
+import kg.dev.shared.feature.player.DirectMediaProvider
+import kg.dev.videoplayer.localmedia.AndroidLocalMediaImporter
 import kg.dev.videoplayer.BuildConfig
 import android.content.pm.PackageManager
 import java.security.MessageDigest
@@ -33,6 +35,7 @@ fun androidModule() = module {
     single<VideoPlayerController> {
         AndroidVideoPlayerController(androidContext())
     }
+    single { AndroidLocalMediaImporter(androidContext(), get<DirectMediaProvider>()) }
 }
 
 /** SHA-1 format expected by Google API keys restricted to Android apps. */

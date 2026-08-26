@@ -60,12 +60,13 @@ private data class Destination(
     val navigate: () -> Unit
 )
 
-typealias HomeComponentFactory = (ComponentContext, (HomeMediaItemUiModel) -> Unit) -> HomeComponent
+typealias HomeComponentFactory = (ComponentContext, (HomeMediaItemUiModel) -> Unit, (() -> Unit)?) -> HomeComponent
 
 @Composable
 fun SharedAppContent(
     rootComponent: RootComponent<SearchComponent>,
     homeComponentFactory: HomeComponentFactory? = null,
+    onImportLocalMedia: (() -> Unit)? = null,
     playerContent: @Composable (PlayerComponent, Modifier) -> Unit = { player, modifier ->
         EmptyState("Playback unavailable", player.title ?: "This media cannot be played here.", modifier)
     }
@@ -89,6 +90,7 @@ fun SharedAppContent(
                         child = stack.active.instance,
                         rootComponent = rootComponent,
                         homeComponentFactory = homeComponentFactory,
+                        onImportLocalMedia = onImportLocalMedia,
                         playerContent = playerContent,
                         modifier = contentModifier
                     )
@@ -101,6 +103,7 @@ fun SharedAppContent(
                         child = stack.active.instance,
                         rootComponent = rootComponent,
                         homeComponentFactory = homeComponentFactory,
+                        onImportLocalMedia = onImportLocalMedia,
                         playerContent = playerContent,
                         modifier = Modifier.weight(1f).fillMaxSize()
                     )
@@ -169,13 +172,16 @@ private fun ActiveContent(
     child: RootComponent.Child<SearchComponent>,
     rootComponent: RootComponent<SearchComponent>,
     homeComponentFactory: HomeComponentFactory?,
+    onImportLocalMedia: (() -> Unit)?,
     playerContent: @Composable (PlayerComponent, Modifier) -> Unit,
     modifier: Modifier
 ) {
     when (child) {
         is RootComponent.Child.Home -> {
             val home = homeComponentFactory?.let { factory ->
-                remember(child.component) { factory(child.component) { item -> rootComponent.openHomeItem(item) } }
+                remember(child.component) {
+                    factory(child.component, { item -> rootComponent.openHomeItem(item) }, onImportLocalMedia)
+                }
             }
             if (home == null) {
                 EmptyState("Home is not available", "Playback history storage is not available on this platform yet.", modifier)
