@@ -16,6 +16,8 @@ sealed interface Configuration {
         val externalId: String,
         val title: String? = null,
         val thumbnailUrl: String? = null,
+        val authorTitle: String? = null,
+        val catalogDurationMs: Long? = null,
         val playbackKind: String,
         val directUri: String? = null,
         val mimeType: String? = null,

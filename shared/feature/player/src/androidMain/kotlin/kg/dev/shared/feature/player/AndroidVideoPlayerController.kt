@@ -31,7 +31,12 @@ class AndroidVideoPlayerController(
         player.addListener(object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 publishState()
-                if (isPlaying) startProgressUpdates()
+                if (isPlaying) {
+                    startProgressUpdates()
+                } else {
+                    progressJob?.cancel()
+                    progressJob = null
+                }
             }
 
             override fun onPlaybackStateChanged(playbackState: Int) = publishState()
@@ -56,6 +61,10 @@ class AndroidVideoPlayerController(
         player.play()
     }
 
+    override fun resume() {
+        player.play()
+    }
+
     override fun pause() {
         player.pause()
     }
@@ -63,6 +72,11 @@ class AndroidVideoPlayerController(
     override fun seekTo(positionMs: Long) {
         player.seekTo(positionMs.coerceAtLeast(0))
         publishState()
+    }
+
+    override fun retry() {
+        player.prepare()
+        player.play()
     }
 
     override fun release() {

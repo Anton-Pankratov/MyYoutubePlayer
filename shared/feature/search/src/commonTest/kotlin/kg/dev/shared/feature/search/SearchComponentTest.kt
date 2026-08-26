@@ -3,6 +3,9 @@ package kg.dev.shared.feature.search
 import com.arkivanov.decompose.DefaultComponentContext
 import com.arkivanov.essenty.lifecycle.LifecycleRegistry
 import kg.dev.shared.core.common.Page
+import kg.dev.shared.core.common.media.MediaCatalogItem
+import kg.dev.shared.core.common.media.MediaProviders
+import kg.dev.shared.core.common.media.MediaReference
 import kg.dev.shared.feature.search.domain.model.Channel
 import kg.dev.shared.feature.search.domain.model.SearchResult
 import kg.dev.shared.feature.search.domain.repository.SearchRepository
@@ -22,6 +25,28 @@ import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class SearchComponentTest {
+    @Test
+    fun videoSelectionIsEmittedToRootOwnedMediaCallback() = runTest {
+        val lifecycle = LifecycleRegistry().also { it.onCreate() }
+        var selected: MediaCatalogItem? = null
+        val component = DefaultSearchComponent(
+            DefaultComponentContext(lifecycle),
+            SearchChannelsUseCase(RecordingRepository()),
+            StandardTestDispatcher(testScheduler),
+            debounceMillis = 0,
+            onMediaSelected = { selected = it }
+        )
+        val video = MediaCatalogItem(
+            MediaReference(MediaProviders.YouTube, "video-id"),
+            "Video"
+        )
+
+        component.selectVideo(video)
+
+        assertEquals(video, selected)
+        lifecycle.onDestroy()
+    }
+
     @Test
     fun queryChangeLoadsNewResult() = runTest {
         val repository = RecordingRepository()
@@ -83,6 +108,34 @@ class SearchComponentTest {
 
         assertEquals(listOf(null, "opaque-next"), repository.tokens.takeLast(2))
         assertEquals(2, component.state.value.items.size)
+        lifecycle.onDestroy()
+    }
+
+    @Test
+    fun duplicateChannelFromNextPageIsIgnored() = runTest {
+        val duplicate = Channel("same-id", "Same channel", "", null)
+        val repository = object : SearchRepository {
+            override suspend fun searchChannels(query: String, pageToken: String?): SearchResult =
+                SearchResult.Success(
+                    Page(
+                        items = listOf(duplicate),
+                        nextPageToken = if (pageToken == null) "next" else null
+                    )
+                )
+        }
+        val lifecycle = LifecycleRegistry().apply { onCreate() }
+        val component = DefaultSearchComponent(
+            DefaultComponentContext(lifecycle),
+            SearchChannelsUseCase(repository),
+            StandardTestDispatcher(testScheduler),
+            debounceMillis = 0
+        )
+
+        advanceUntilIdle()
+        component.loadNextPage()
+        advanceUntilIdle()
+
+        assertEquals(listOf(duplicate), component.state.value.items)
         lifecycle.onDestroy()
     }
 

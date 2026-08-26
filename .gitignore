@@ -8,6 +8,7 @@ Thumbs.db
 .cxx/
 .gradle/
 .kotlin/
+kotlin-js-store/
 .externalNativeBuild/
 outputs/
 captures/

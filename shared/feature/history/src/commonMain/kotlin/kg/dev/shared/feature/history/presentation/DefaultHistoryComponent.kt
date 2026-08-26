@@ -3,6 +3,7 @@ package kg.dev.shared.feature.history.presentation
 import com.arkivanov.decompose.ComponentContext
 import com.arkivanov.essenty.lifecycle.Lifecycle
 import kg.dev.shared.feature.history.domain.HistoryRepository
+import kg.dev.shared.feature.history.domain.ResumePolicy
 import kg.dev.shared.core.common.media.MediaReference
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -36,7 +37,15 @@ class DefaultHistoryComponent(
             mutableState.value = mutableState.value.copy(isLoading = true, error = false)
             mutableState.value = try {
                 HistoryUiState(items = repository.recent().map { video ->
-                    HistoryItemUiModel(video.reference, video.title, video.thumbnailUrl, video.positionMs, video.durationMs, video.watchedAtEpochMs)
+                    HistoryItemUiModel(
+                        reference = video.reference,
+                        title = video.title,
+                        thumbnailUrl = video.thumbnailUrl,
+                        positionMs = video.positionMs,
+                        durationMs = video.durationMs,
+                        watchedAtEpochMs = video.watchedAtEpochMs,
+                        resumeDecision = ResumePolicy.evaluate(video.positionMs, video.durationMs)
+                    )
                 })
             } catch (_: Throwable) {
                 HistoryUiState(error = true)

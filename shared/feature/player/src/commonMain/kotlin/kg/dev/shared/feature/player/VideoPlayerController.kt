@@ -23,9 +23,13 @@ enum class PlayerError {
 
 interface VideoPlayerController {
     val state: StateFlow<PlayerState>
-    /** Called only for [PlaybackSource.Direct] sources. */
+    /** Loads a new [PlaybackSource.Direct] session and starts it. */
     suspend fun play(media: PlayableMedia)
+    /** Continues the already loaded session without replacing its media item. */
+    fun resume()
     fun pause()
     fun seekTo(positionMs: Long)
+    /** Retries the current session while preserving its current position when possible. */
+    fun retry()
     fun release()
 }

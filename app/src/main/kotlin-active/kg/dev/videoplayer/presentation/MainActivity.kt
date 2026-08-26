@@ -4,7 +4,6 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.material3.MaterialTheme
 import com.arkivanov.decompose.defaultComponentContext
 import kg.dev.shared.core.ui.navigation.DefaultRootComponent
 import kg.dev.shared.feature.search.domain.usecase.SearchChannelsUseCase
@@ -21,6 +20,7 @@ import kg.dev.shared.feature.player.presentation.DefaultPlayerComponent
 import kg.dev.shared.feature.history.domain.HistoryRepository
 import kg.dev.videoplayer.presentation.main.MainScreen
 import org.koin.android.ext.android.get
+import kg.dev.shared.core.ui.design.MediaAppTheme
 
 class MainActivity : ComponentActivity() {
     private val rootComponent by lazy {
@@ -38,7 +38,9 @@ class MainActivity : ComponentActivity() {
                         MediaCatalogItem(
                             reference = MediaReference(MediaProviderId(configuration.providerId), configuration.externalId),
                             title = configuration.title ?: configuration.externalId,
-                            thumbnailUrl = configuration.thumbnailUrl
+                            thumbnailUrl = configuration.thumbnailUrl,
+                            authorTitle = configuration.authorTitle,
+                            durationMs = configuration.catalogDurationMs
                         ),
                         if (configuration.playbackKind == "direct") PlaybackSource.Direct(
                             configuration.directUri.orEmpty(), configuration.mimeType
@@ -59,6 +61,6 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        setContent { MaterialTheme { MainScreen(rootComponent) } }
+        setContent { MediaAppTheme { MainScreen(rootComponent) } }
     }
 }

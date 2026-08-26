@@ -18,8 +18,11 @@ android {
     defaultConfig {
         val apiProperties = Properties()
         rootProject.file("app_credentials.properties").takeIf { it.isFile }?.inputStream()?.use(apiProperties::load)
-        val youtubeApiKey = providers.environmentVariable("YOUTUBE_DATA_API_V3_API_KEY").orNull
-            ?: apiProperties.getProperty("YOUTUBE_DATA_API_V3_API_KEY").orEmpty()
+        val youtubeApiKey = (providers.environmentVariable("YOUTUBE_DATA_API_V3_API_KEY").orNull
+            ?: apiProperties.getProperty("YOUTUBE_DATA_API_V3_API_KEY").orEmpty())
+            .trim()
+            .removeSurrounding("\"")
+            .removeSurrounding("'")
         buildConfigField(
             "String",
             "YOUTUBE_API_KEY",
@@ -52,6 +55,8 @@ dependencies {
     implementation(project(":shared:core:storage"))
     implementation(project(":shared:core:di"))
     implementation(project(":shared:core:ui"))
+    implementation(project(":shared:app-shell"))
+    implementation(project(":shared:feature:home"))
     implementation(project(":shared:feature:search"))
     implementation(project(":shared:feature:player"))
     implementation(project(":shared:feature:history"))

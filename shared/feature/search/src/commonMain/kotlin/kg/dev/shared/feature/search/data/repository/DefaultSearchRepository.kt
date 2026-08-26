@@ -43,7 +43,7 @@ internal class DefaultSearchRepository(
     } catch (cancellation: CancellationException) {
         throw cancellation
     } catch (error: SearchHttpException) {
-        SearchResult.Failure(error.status.toSearchError())
+        SearchResult.Failure(error.toSearchError())
     } catch (_: SerializationException) {
         SearchResult.Failure(SearchError.InvalidResponse)
     } catch (_: ContentConvertException) {
@@ -77,7 +77,7 @@ internal class DefaultSearchRepository(
     } catch (cancellation: CancellationException) {
         throw cancellation
     } catch (error: SearchHttpException) {
-        ChannelVideosResult.Failure(error.status.toSearchError())
+        ChannelVideosResult.Failure(error.toSearchError())
     } catch (_: SerializationException) {
         ChannelVideosResult.Failure(SearchError.InvalidResponse)
     } catch (_: ContentConvertException) {
@@ -93,8 +93,14 @@ internal class DefaultSearchRepository(
     }
 }
 
-private fun HttpStatusCode.toSearchError(): SearchError = when (this) {
-    HttpStatusCode.Unauthorized -> SearchError.Unauthorized
-    HttpStatusCode.Forbidden, HttpStatusCode.TooManyRequests -> SearchError.QuotaExceeded
+private fun SearchHttpException.toSearchError(): SearchError = when {
+    reason in setOf("quotaExceeded", "dailyLimitExceeded", "rateLimitExceeded") ->
+        SearchError.QuotaExceeded
+    status == HttpStatusCode.TooManyRequests -> SearchError.QuotaExceeded
+    // YouTube reports an invalid/malformed API key as HTTP 400 (for example,
+    // when the key is disabled or restricted for a different application).
+    status == HttpStatusCode.BadRequest || status == HttpStatusCode.Unauthorized ->
+        SearchError.Unauthorized
+    status == HttpStatusCode.Forbidden -> SearchError.Unauthorized
     else -> SearchError.Network
 }

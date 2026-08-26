@@ -28,16 +28,27 @@ class DefaultPlayerComponent(
     private val nowEpochMillis: () -> Long,
     coroutineContext: CoroutineContext = Dispatchers.Default
 ) : PlayerComponent, NavigationPlayerComponent, ComponentContext by componentContext {
+    private val resolvedInitialPositionMs = initialPositionMs.coerceAtLeast(0)
     private val scope = CoroutineScope(SupervisorJob() + coroutineContext)
-    private val mutableState = MutableStateFlow(PlayerUiState(media = media, positionMs = initialPositionMs))
+    private val mutableState = MutableStateFlow(PlayerUiState(media = media, positionMs = resolvedInitialPositionMs))
     override val state: StateFlow<PlayerUiState> = mutableState.asStateFlow()
-    private var lastPersistedPositionMs = initialPositionMs
+    private var lastPersistedPositionMs = resolvedInitialPositionMs
+    private var loadRequested = false
+    private var initialSeekConsumed = resolvedInitialPositionMs == 0L
+    private var completionPersisted = false
     private var released = false
 
     override val mediaId: String get() = media.catalogItem.reference.externalId
     override val providerId: String get() = media.catalogItem.reference.provider.value
     override val title: String get() = media.catalogItem.title
-    override val startPositionMs: Long get() = initialPositionMs
+    override val thumbnailUrl: String? get() = media.catalogItem.thumbnailUrl
+    override val authorTitle: String? get() = media.catalogItem.authorTitle
+    override val catalogDurationMs: Long? get() = media.catalogItem.durationMs
+    override val playbackKind: String
+        get() = if (media.source is PlaybackSource.Direct) "direct" else "provider-controlled"
+    override val directUri: String? get() = (media.source as? PlaybackSource.Direct)?.uri
+    override val mimeType: String? get() = (media.source as? PlaybackSource.Direct)?.mimeType
+    override val startPositionMs: Long get() = resolvedInitialPositionMs
 
     init {
         lifecycle.subscribe(object : Lifecycle.Callbacks {
@@ -57,10 +68,14 @@ class DefaultPlayerComponent(
                     error = playerState.error ?: if (playerState.media == null) mutableState.value.error else null,
                     isCompleted = playerState.isCompleted
                 )
-                val shouldPersist = playerState.isCompleted ||
+                if (!playerState.isCompleted) completionPersisted = false
+                val shouldPersist = (playerState.isCompleted && !completionPersisted) ||
                     (wasPlaying && !playerState.isPlaying) ||
                     playerState.positionMs - lastPersistedPositionMs >= PROGRESS_PERSIST_INTERVAL_MS
-                if (shouldPersist) persistProgress(playerState.positionMs, playerState.durationMs, playerState.isCompleted)
+                if (shouldPersist) {
+                    if (playerState.isCompleted) completionPersisted = true
+                    persistProgress(playerState.positionMs, playerState.durationMs, playerState.isCompleted)
+                }
                 wasPlaying = playerState.isPlaying
             }
         }
@@ -71,10 +86,22 @@ class DefaultPlayerComponent(
             mutableState.value = mutableState.value.copy(error = PlayerError.UnsupportedMedia)
             return
         }
+        val isFirstLoad = !loadRequested
+        if (isFirstLoad) loadRequested = true
         scope.launch {
-            videoPlayerController.play(media)
-            if (initialPositionMs > 0 && videoPlayerController.state.value.positionMs == 0L) {
-                videoPlayerController.seekTo(initialPositionMs)
+            when {
+                isFirstLoad -> {
+                    videoPlayerController.play(media)
+                    if (!initialSeekConsumed) {
+                        initialSeekConsumed = true
+                        videoPlayerController.seekTo(resolvedInitialPositionMs)
+                    }
+                }
+                mutableState.value.isCompleted -> {
+                    videoPlayerController.seekTo(0)
+                    videoPlayerController.resume()
+                }
+                else -> videoPlayerController.resume()
             }
         }
     }
@@ -88,7 +115,17 @@ class DefaultPlayerComponent(
         videoPlayerController.seekTo(positionMs)
     }
 
-    override fun retry() = play()
+    override fun retry() {
+        if (media.source !is PlaybackSource.Direct) {
+            mutableState.value = mutableState.value.copy(error = PlayerError.UnsupportedMedia)
+            return
+        }
+        if (!loadRequested) {
+            play()
+        } else {
+            scope.launch { videoPlayerController.retry() }
+        }
+    }
 
     private fun persistProgress(
         positionMs: Long = mutableState.value.positionMs,
@@ -100,7 +137,12 @@ class DefaultPlayerComponent(
             if (releaseAfterPersisting) releaseAndCancel()
             return
         }
-        val savedPosition = if (completed) 0 else positionMs.coerceAtLeast(0)
+        val usableDurationMs = durationMs?.takeIf { it > 0 }
+        val savedPosition = if (completed && usableDurationMs != null) {
+            usableDurationMs
+        } else {
+            positionMs.coerceAtLeast(0)
+        }
         lastPersistedPositionMs = savedPosition
         scope.launch {
             try {

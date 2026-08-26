@@ -62,11 +62,34 @@ class SearchRepositoryTest {
 
     @Test
     fun quota403IsNormalizedWithoutLeakingTransportException() {
-        val client = testClient(MockEngine { respondError(HttpStatusCode.Forbidden) })
+        val client = testClient(MockEngine {
+            respond(
+                """{"error":{"errors":[{"reason":"quotaExceeded"}]}}""",
+                HttpStatusCode.Forbidden,
+                headersOf(HttpHeaders.ContentType, "application/json")
+            )
+        })
         val repository: SearchRepository = DefaultSearchRepository(KtorSearchRemoteDataSource(client, TestConfiguration))
         kotlinx.coroutines.test.runTest {
             val failure = assertIs<SearchResult.Failure>(repository.searchChannels("Kotlin"))
             assertEquals(SearchError.QuotaExceeded, failure.error)
+        }
+        client.close()
+    }
+
+    @Test
+    fun androidKeyRestrictionIsNotReportedAsQuota() {
+        val client = testClient(MockEngine {
+            respond(
+                """{"error":{"errors":[{"reason":"forbidden"}],"details":[{"reason":"API_KEY_ANDROID_APP_BLOCKED"}]}}""",
+                HttpStatusCode.Forbidden,
+                headersOf(HttpHeaders.ContentType, "application/json")
+            )
+        })
+        val repository: SearchRepository = DefaultSearchRepository(KtorSearchRemoteDataSource(client, TestConfiguration))
+        kotlinx.coroutines.test.runTest {
+            val failure = assertIs<SearchResult.Failure>(repository.searchChannels("Kotlin"))
+            assertEquals(SearchError.Unauthorized, failure.error)
         }
         client.close()
     }

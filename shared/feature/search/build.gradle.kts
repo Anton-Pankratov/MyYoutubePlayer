@@ -22,7 +22,6 @@ kotlin {
             implementation(project(":shared:core:ui"))
             implementation(project(":shared:core:network"))
             implementation(project(":shared:feature:player"))
-            implementation(project(":shared:feature:history"))
             implementation(libs.ktor.client.core)
             implementation(libs.kotlinx.serialization.json)
             implementation(libs.coroutines)
@@ -31,6 +30,8 @@ kotlin {
             implementation(compose.runtime)
             implementation(compose.foundation)
             implementation(compose.material3)
+            implementation(compose.materialIconsExtended)
+            implementation(compose.components.uiToolingPreview)
         }
         commonTest.dependencies {
             implementation(kotlin("test"))

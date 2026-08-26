@@ -66,7 +66,9 @@ class DefaultSearchComponent(
             if (snapshot.selectedChannel != null) {
                 when (val result = searchChannels.channelVideos(snapshot.selectedChannel.id, token)) {
                     is ChannelVideosResult.Success -> mutableState.value = mutableState.value.copy(
-                        isLoadingMore = false, videos = mutableState.value.videos + result.page.items,
+                        isLoadingMore = false,
+                        videos = (mutableState.value.videos + result.page.items)
+                            .distinctBy { it.reference },
                         nextPageToken = result.page.nextPageToken
                     )
                     is ChannelVideosResult.Failure -> mutableState.value = mutableState.value.copy(isLoadingMore = false, error = result.error)
@@ -74,7 +76,8 @@ class DefaultSearchComponent(
             } else when (val result = searchChannels(snapshot.query, token)) {
                 is SearchResult.Success -> mutableState.value = mutableState.value.copy(
                     isLoadingMore = false,
-                    items = mutableState.value.items + result.page.items,
+                    items = (mutableState.value.items + result.page.items)
+                        .distinctBy { it.providerId to it.id },
                     nextPageToken = result.page.nextPageToken
                 )
                 is SearchResult.Failure -> mutableState.value = mutableState.value.copy(
@@ -115,7 +118,7 @@ class DefaultSearchComponent(
         when (val result = searchChannels(normalizedQuery)) {
             is SearchResult.Success -> mutableState.value = mutableState.value.copy(
                 isLoading = false,
-                items = result.page.items,
+                items = result.page.items.distinctBy { it.providerId to it.id },
                 nextPageToken = result.page.nextPageToken
             )
             is SearchResult.Failure -> mutableState.value = mutableState.value.copy(
@@ -132,7 +135,9 @@ class DefaultSearchComponent(
         )
         when (val result = searchChannels.channelVideos(channel.id)) {
             is ChannelVideosResult.Success -> mutableState.value = mutableState.value.copy(
-                isLoading = false, videos = result.page.items, nextPageToken = result.page.nextPageToken
+                isLoading = false,
+                videos = result.page.items.distinctBy { it.reference },
+                nextPageToken = result.page.nextPageToken
             )
             is ChannelVideosResult.Failure -> mutableState.value = mutableState.value.copy(isLoading = false, error = result.error)
         }

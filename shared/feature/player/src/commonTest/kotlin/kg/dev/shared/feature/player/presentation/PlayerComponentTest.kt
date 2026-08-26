@@ -70,6 +70,79 @@ class PlayerComponentTest {
     }
 
     @Test
+    fun initialResumeSeekIsConsumedOnlyOnceAcrossPauseAndPlay() = runTest {
+        val lifecycle = LifecycleRegistry().also { it.onCreate() }
+        val controller = FakeController()
+        val component = DefaultPlayerComponent(
+            DefaultComponentContext(lifecycle), media(), controller, RecordingHistoryRepository(),
+            initialPositionMs = 42_000, nowEpochMillis = { 99 },
+            coroutineContext = StandardTestDispatcher(testScheduler)
+        )
+
+        component.play()
+        advanceUntilIdle()
+        component.pause()
+        component.play()
+        component.play()
+        advanceUntilIdle()
+
+        assertEquals(1, controller.loadCalls)
+        assertEquals(listOf(42_000L), controller.seekCalls)
+        assertEquals(2, controller.resumeCalls)
+        lifecycle.onDestroy()
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun retryPreservesCurrentSessionAndDoesNotReapplyInitialSeek() = runTest {
+        val lifecycle = LifecycleRegistry().also { it.onCreate() }
+        val controller = FakeController()
+        val component = DefaultPlayerComponent(
+            DefaultComponentContext(lifecycle), media(), controller, RecordingHistoryRepository(),
+            initialPositionMs = 42_000, nowEpochMillis = { 99 },
+            coroutineContext = StandardTestDispatcher(testScheduler)
+        )
+
+        component.play()
+        advanceUntilIdle()
+        controller.publish(PlayerState(media(), positionMs = 60_000, durationMs = 100_000, error = PlayerError.NetworkFailure))
+        advanceUntilIdle()
+        component.retry()
+        advanceUntilIdle()
+
+        assertEquals(1, controller.retryCalls)
+        assertEquals(listOf(42_000L), controller.seekCalls)
+        assertEquals(60_000, controller.state.value.positionMs)
+        lifecycle.onDestroy()
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun completedPlaybackPersistsFinalProgressAndReplayStartsAtZero() = runTest {
+        val lifecycle = LifecycleRegistry().also { it.onCreate() }
+        val controller = FakeController()
+        val history = RecordingHistoryRepository()
+        val component = component(lifecycle, controller, history, StandardTestDispatcher(testScheduler))
+
+        component.play()
+        advanceUntilIdle()
+        controller.publish(
+            PlayerState(media(), positionMs = 99_000, durationMs = 100_000, isCompleted = true)
+        )
+        advanceUntilIdle()
+
+        assertEquals(100_000, history.saved.last().positionMs)
+        assertEquals(100_000, history.saved.last().durationMs)
+
+        component.play()
+        advanceUntilIdle()
+        assertEquals(0, controller.seekedTo)
+        assertEquals(1, controller.resumeCalls)
+        lifecycle.onDestroy()
+        advanceUntilIdle()
+    }
+
+    @Test
     fun errorsAndLifecycleReleaseArePropagated() = runTest {
         val lifecycle = LifecycleRegistry().also { it.onCreate() }
         val controller = FakeController()
@@ -125,18 +198,31 @@ class PlayerComponentTest {
         private val mutableState = MutableStateFlow(PlayerState())
         override val state: StateFlow<PlayerState> = mutableState
         var playedMedia: PlayableMedia? = null
-        var seekedTo: Long? = null
+        var loadCalls = 0
+        var resumeCalls = 0
+        var retryCalls = 0
+        val seekCalls = mutableListOf<Long>()
+        val seekedTo: Long? get() = seekCalls.lastOrNull()
         var releaseCalls = 0
 
         override suspend fun play(media: PlayableMedia) {
+            loadCalls++
             playedMedia = media
             mutableState.value = PlayerState(media = media, isPlaying = true)
         }
 
+        override fun resume() {
+            resumeCalls++
+            mutableState.value = mutableState.value.copy(isPlaying = true, isCompleted = false, error = null)
+        }
         override fun pause() { mutableState.value = mutableState.value.copy(isPlaying = false) }
         override fun seekTo(positionMs: Long) {
-            seekedTo = positionMs
+            seekCalls += positionMs
             mutableState.value = mutableState.value.copy(positionMs = positionMs)
+        }
+        override fun retry() {
+            retryCalls++
+            mutableState.value = mutableState.value.copy(isPlaying = true, error = null)
         }
         override fun release() { releaseCalls++ }
         fun publish(state: PlayerState) { mutableState.value = state }

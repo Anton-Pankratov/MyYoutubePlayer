@@ -16,6 +16,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Job
+import kotlin.coroutines.CoroutineContext
 
 interface RootComponent<SearchComponent : Any> {
     val childStack: Value<ChildStack<Configuration, Child<SearchComponent>>>
@@ -44,6 +45,12 @@ interface PlayerComponent {
     val mediaId: String
     val providerId: String
     val title: String?
+    val thumbnailUrl: String?
+    val authorTitle: String?
+    val catalogDurationMs: Long?
+    val playbackKind: String
+    val directUri: String?
+    val mimeType: String?
     val startPositionMs: Long
 }
 
@@ -54,10 +61,12 @@ class DefaultRootComponent<SearchComponent : Any>(
     private val mediaOpenCoordinator: MediaOpenCoordinator = object : MediaOpenCoordinator {
         override suspend fun open(item: MediaCatalogItem) = MediaOpenResult.Failure("Playback is not configured.", false)
     },
+    coroutineContext: CoroutineContext = Dispatchers.Main.immediate,
     private val playerComponentFactory: (ComponentContext, Configuration.Player) -> PlayerComponent =
         { context, configuration -> DefaultPlayerComponent(context, configuration) }
 ) : RootComponent<SearchComponent>, ComponentContext by componentContext {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    // Decompose navigation creates lifecycle-bound children and must run on the UI thread.
+    private val scope = CoroutineScope(SupervisorJob() + coroutineContext)
     private var openJob: Job? = null
     private var openGeneration = 0L
     private val navigation = StackNavigation<Configuration>()
@@ -145,5 +154,11 @@ private class DefaultPlayerComponent(
     override val mediaId = configuration.externalId
     override val providerId = configuration.providerId
     override val title = configuration.title
+    override val thumbnailUrl = configuration.thumbnailUrl
+    override val authorTitle = configuration.authorTitle
+    override val catalogDurationMs = configuration.catalogDurationMs
+    override val playbackKind = configuration.playbackKind
+    override val directUri = configuration.directUri
+    override val mimeType = configuration.mimeType
     override val startPositionMs = configuration.startPositionMs
 }
