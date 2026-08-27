@@ -28,5 +28,8 @@ class YouTubeEmbedTest {
         assertTrue("enablejsapi: 1" in html)
         assertTrue("origin: 'https://kg.dev.videoplayer'" in html)
         assertTrue("AndroidPlayerBridge.onReady()" in html)
+        assertTrue("AndroidPlayerBridge.onStateChanged" in html)
+        assertTrue("AndroidPlayerBridge.onError" in html)
+        assertTrue("AndroidPlayerBridge.onProgress" in html)
     }
 }

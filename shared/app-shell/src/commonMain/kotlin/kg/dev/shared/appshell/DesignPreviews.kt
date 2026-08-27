@@ -18,6 +18,7 @@ import kg.dev.shared.feature.home.presentation.HomeMediaItemUiModel
 import kg.dev.shared.feature.home.presentation.HomeUiState
 import kg.dev.shared.feature.home.ui.HomeContent
 import kg.dev.shared.feature.player.PlayableMedia
+import kg.dev.shared.feature.player.PlaybackState
 import kg.dev.shared.feature.player.PlaybackSource
 import kg.dev.shared.feature.player.presentation.PlayerUiState
 import kg.dev.shared.feature.player.ui.PlayerContent
@@ -83,7 +84,7 @@ private fun PlayerDarkPreview() = PreviewTheme(dark = true) {
             media = PlayableMedia(previewMedia.copy(reference = MediaReference(MediaProviders.Direct, "direct-1")), PlaybackSource.Direct("preview")),
             positionMs = 238_000,
             durationMs = 742_000,
-            isPlaying = true
+            playbackState = PlaybackState.Playing
         ),
         onPlay = {}, onPause = {}, onSeek = {}, onRetry = {},
         mediaSurface = { Box(it.background(MediaTheme.colors.playerBackground)) },

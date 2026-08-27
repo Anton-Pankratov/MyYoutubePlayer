@@ -26,6 +26,8 @@ class AndroidVideoPlayerController(
     private val mutableState = MutableStateFlow(PlayerState())
     override val state: StateFlow<PlayerState> = mutableState.asStateFlow()
     private var progressJob: Job? = null
+    private var hasStartedPlayback = false
+    private var terminalError: PlayerError? = null
 
     init {
         player.addListener(object : Player.Listener {
@@ -42,7 +44,8 @@ class AndroidVideoPlayerController(
             override fun onPlaybackStateChanged(playbackState: Int) = publishState()
 
             override fun onPlayerError(error: PlaybackException) {
-                mutableState.value = mutableState.value.copy(error = error.toPlayerError())
+                terminalError = error.toPlayerError()
+                publishState()
             }
         })
     }
@@ -50,10 +53,15 @@ class AndroidVideoPlayerController(
     override suspend fun play(media: PlayableMedia) {
         val source = media.source as? PlaybackSource.Direct
         if (source == null || source.uri.isBlank()) {
-            mutableState.value = PlayerState(media = media, error = PlayerError.UnsupportedMedia)
+            mutableState.value = PlayerState(
+                media = media,
+                playbackState = PlaybackState.Error(PlayerError.UnsupportedMedia)
+            )
             return
         }
-        mutableState.value = PlayerState(media = media)
+        hasStartedPlayback = false
+        terminalError = null
+        mutableState.value = PlayerState(media = media, playbackState = PlaybackState.Loading)
         player.setMediaItem(
             androidx.media3.common.MediaItem.Builder().setUri(source.uri).setMimeType(source.mimeType).build()
         )
@@ -75,6 +83,8 @@ class AndroidVideoPlayerController(
     }
 
     override fun retry() {
+        terminalError = null
+        mutableState.value = mutableState.value.copy(playbackState = PlaybackState.Loading)
         player.prepare()
         player.play()
     }
@@ -98,13 +108,26 @@ class AndroidVideoPlayerController(
     private fun publishState() {
         val duration = player.duration.takeIf { it >= 0 }
         mutableState.value = mutableState.value.copy(
-            isPlaying = player.isPlaying,
+            playbackState = terminalError?.let(PlaybackState::Error) ?: enginePlaybackState(),
             positionMs = player.currentPosition.coerceAtLeast(0),
             durationMs = duration,
-            bufferedPositionMs = player.bufferedPosition.coerceAtLeast(0),
-            isCompleted = player.playbackState == Player.STATE_ENDED,
-            error = null
+            bufferedPositionMs = player.bufferedPosition.coerceAtLeast(0)
         )
+    }
+
+    private fun enginePlaybackState(): PlaybackState = when (player.playbackState) {
+        Player.STATE_BUFFERING -> PlaybackState.Buffering
+        Player.STATE_READY -> when {
+            player.isPlaying -> {
+                hasStartedPlayback = true
+                PlaybackState.Playing
+            }
+            hasStartedPlayback -> PlaybackState.Paused
+            else -> PlaybackState.Ready
+        }
+        Player.STATE_ENDED -> PlaybackState.Completed
+        Player.STATE_IDLE -> if (mutableState.value.media == null) PlaybackState.Idle else PlaybackState.Loading
+        else -> PlaybackState.Loading
     }
 
     private companion object {

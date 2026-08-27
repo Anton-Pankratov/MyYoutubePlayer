@@ -6,6 +6,9 @@ import kg.dev.shared.core.ui.navigation.PlayerComponent as NavigationPlayerCompo
 import kg.dev.shared.feature.history.domain.HistoryRepository
 import kg.dev.shared.feature.history.domain.WatchedVideo
 import kg.dev.shared.feature.player.PlayableMedia
+import kg.dev.shared.feature.player.ProviderPlaybackAdapterRegistry
+import kg.dev.shared.feature.player.ProviderPlaybackSession
+import kg.dev.shared.feature.player.PlaybackState
 import kg.dev.shared.feature.player.PlaybackSource
 import kg.dev.shared.feature.player.PlayerError
 import kg.dev.shared.feature.player.VideoPlayerController
@@ -26,6 +29,7 @@ class DefaultPlayerComponent(
     private val historyRepository: HistoryRepository,
     private val initialPositionMs: Long = 0,
     private val nowEpochMillis: () -> Long,
+    val providerPlaybackAdapters: ProviderPlaybackAdapterRegistry = ProviderPlaybackAdapterRegistry.Empty,
     coroutineContext: CoroutineContext = Dispatchers.Default
 ) : PlayerComponent, NavigationPlayerComponent, ComponentContext by componentContext {
     private val resolvedInitialPositionMs = initialPositionMs.coerceAtLeast(0)
@@ -37,6 +41,10 @@ class DefaultPlayerComponent(
     private var initialSeekConsumed = resolvedInitialPositionMs == 0L
     private var completionPersisted = false
     private var released = false
+    private val providerAdapter = (media.source as? PlaybackSource.ProviderControlled)?.let {
+        providerPlaybackAdapters[it.reference.provider]
+    }
+    override val providerPlaybackSession: ProviderPlaybackSession? = providerAdapter?.createSession(media)
 
     override val mediaId: String get() = media.catalogItem.reference.externalId
     override val providerId: String get() = media.catalogItem.reference.provider.value
@@ -56,75 +64,96 @@ class DefaultPlayerComponent(
                 persistProgress(releaseAfterPersisting = true)
             }
         })
-        scope.launch {
-            var wasPlaying = false
-            videoPlayerController.state.collect { playerState ->
-                mutableState.value = PlayerUiState(
-                    media = playerState.media ?: media,
-                    isPlaying = playerState.isPlaying,
-                    positionMs = playerState.positionMs,
-                    durationMs = playerState.durationMs,
-                    bufferedPositionMs = playerState.bufferedPositionMs,
-                    error = playerState.error ?: if (playerState.media == null) mutableState.value.error else null,
-                    isCompleted = playerState.isCompleted
-                )
-                if (!playerState.isCompleted) completionPersisted = false
-                val shouldPersist = (playerState.isCompleted && !completionPersisted) ||
-                    (wasPlaying && !playerState.isPlaying) ||
-                    playerState.positionMs - lastPersistedPositionMs >= PROGRESS_PERSIST_INTERVAL_MS
-                if (shouldPersist) {
-                    if (playerState.isCompleted) completionPersisted = true
-                    persistProgress(playerState.positionMs, playerState.durationMs, playerState.isCompleted)
-                }
-                wasPlaying = playerState.isPlaying
-            }
+        when (media.source) {
+            is PlaybackSource.Direct -> collectBackendState(videoPlayerController.state)
+            is PlaybackSource.ProviderControlled -> providerPlaybackSession?.let { collectBackendState(it.state) }
         }
     }
 
     override fun play() {
-        if (media.source !is PlaybackSource.Direct) {
-            mutableState.value = mutableState.value.copy(error = PlayerError.UnsupportedMedia)
-            return
-        }
+        val providerSession = providerPlaybackSession
+        if (media.source is PlaybackSource.ProviderControlled && providerSession == null) return unsupportedProviderPlayback()
         val isFirstLoad = !loadRequested
         if (isFirstLoad) loadRequested = true
         scope.launch {
             when {
                 isFirstLoad -> {
-                    videoPlayerController.play(media)
+                    if (media.source is PlaybackSource.Direct) videoPlayerController.play(media)
+                    else providerSession?.load(media)
                     if (!initialSeekConsumed) {
                         initialSeekConsumed = true
-                        videoPlayerController.seekTo(resolvedInitialPositionMs)
+                        seekBackendTo(resolvedInitialPositionMs)
                     }
                 }
                 mutableState.value.isCompleted -> {
-                    videoPlayerController.seekTo(0)
-                    videoPlayerController.resume()
+                    seekBackendTo(0)
+                    resumeBackend()
                 }
-                else -> videoPlayerController.resume()
+                else -> resumeBackend()
             }
         }
     }
 
     override fun pause() {
-        videoPlayerController.pause()
+        if (media.source is PlaybackSource.Direct) videoPlayerController.pause() else providerPlaybackSession?.pause()
         persistProgress()
     }
 
     override fun seekTo(positionMs: Long) {
-        videoPlayerController.seekTo(positionMs)
+        seekBackendTo(positionMs)
     }
 
     override fun retry() {
-        if (media.source !is PlaybackSource.Direct) {
-            mutableState.value = mutableState.value.copy(error = PlayerError.UnsupportedMedia)
-            return
-        }
+        if (media.source is PlaybackSource.ProviderControlled && providerPlaybackSession == null) return unsupportedProviderPlayback()
         if (!loadRequested) {
             play()
         } else {
-            scope.launch { videoPlayerController.retry() }
+            scope.launch {
+                if (media.source is PlaybackSource.Direct) videoPlayerController.retry()
+                else providerPlaybackSession?.retry()
+            }
         }
+    }
+
+    private fun collectBackendState(backendState: StateFlow<kg.dev.shared.feature.player.PlayerState>) {
+        scope.launch {
+            var previousPlaybackState: PlaybackState = PlaybackState.Idle
+            backendState.collect { playerState ->
+                if (released) return@collect
+                mutableState.value = PlayerUiState(
+                    media = playerState.media ?: media,
+                    playbackState = playerState.playbackState,
+                    positionMs = playerState.positionMs,
+                    durationMs = playerState.durationMs,
+                    bufferedPositionMs = playerState.bufferedPositionMs
+                )
+                if (!playerState.isCompleted) completionPersisted = false
+                val shouldPersist = (playerState.isCompleted && !completionPersisted) ||
+                    (previousPlaybackState == PlaybackState.Playing &&
+                        playerState.playbackState == PlaybackState.Paused) ||
+                    playerState.positionMs - lastPersistedPositionMs >= PROGRESS_PERSIST_INTERVAL_MS
+                if (shouldPersist) {
+                    if (playerState.isCompleted) completionPersisted = true
+                    persistProgress(playerState.positionMs, playerState.durationMs, playerState.isCompleted)
+                }
+                previousPlaybackState = playerState.playbackState
+            }
+        }
+    }
+
+    private fun resumeBackend() {
+        if (media.source is PlaybackSource.Direct) videoPlayerController.resume() else providerPlaybackSession?.play()
+    }
+
+    private fun seekBackendTo(positionMs: Long) {
+        if (media.source is PlaybackSource.Direct) videoPlayerController.seekTo(positionMs)
+        else providerPlaybackSession?.seekTo(positionMs)
+    }
+
+    private fun unsupportedProviderPlayback() {
+        mutableState.value = mutableState.value.copy(
+            playbackState = PlaybackState.Error(PlayerError.UnsupportedMedia)
+        )
     }
 
     private fun persistProgress(
@@ -133,7 +162,7 @@ class DefaultPlayerComponent(
         completed: Boolean = mutableState.value.isCompleted,
         releaseAfterPersisting: Boolean = false
     ) {
-        if (media.source !is PlaybackSource.Direct) {
+        if (media.source is PlaybackSource.ProviderControlled && providerPlaybackSession == null) {
             if (releaseAfterPersisting) releaseAndCancel()
             return
         }
@@ -170,7 +199,7 @@ class DefaultPlayerComponent(
     private fun releaseOnce() {
         if (released) return
         released = true
-        videoPlayerController.release()
+        if (media.source is PlaybackSource.Direct) videoPlayerController.release() else providerPlaybackSession?.release()
     }
 
     private companion object {

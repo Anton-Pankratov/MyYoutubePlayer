@@ -2,15 +2,29 @@ package kg.dev.shared.feature.player
 
 import kotlinx.coroutines.flow.StateFlow
 
+/** Provider- and platform-neutral lifecycle for one playback session. */
+sealed interface PlaybackState {
+    data object Idle : PlaybackState
+    data object Loading : PlaybackState
+    data object Ready : PlaybackState
+    data object Playing : PlaybackState
+    data object Paused : PlaybackState
+    data object Buffering : PlaybackState
+    data object Completed : PlaybackState
+    data class Error(val error: PlayerError) : PlaybackState
+}
+
 data class PlayerState(
     val media: PlayableMedia? = null,
-    val isPlaying: Boolean = false,
+    val playbackState: PlaybackState = PlaybackState.Idle,
     val positionMs: Long = 0,
     val durationMs: Long? = null,
-    val bufferedPositionMs: Long? = null,
-    val isCompleted: Boolean = false,
-    val error: PlayerError? = null
-)
+    val bufferedPositionMs: Long? = null
+) {
+    val isPlaying: Boolean get() = playbackState == PlaybackState.Playing
+    val isCompleted: Boolean get() = playbackState == PlaybackState.Completed
+    val error: PlayerError? get() = (playbackState as? PlaybackState.Error)?.error
+}
 
 enum class PlayerError {
     UnsupportedMedia,

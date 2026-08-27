@@ -16,7 +16,9 @@ import kg.dev.shared.feature.player.PlayableMedia
 import kg.dev.shared.feature.player.PlaybackSource
 import kg.dev.shared.core.ui.navigation.MediaOpenCoordinator
 import kg.dev.shared.feature.player.VideoPlayerController
+import kg.dev.shared.feature.player.ProviderPlaybackAdapterRegistry
 import kg.dev.shared.feature.player.presentation.DefaultPlayerComponent
+import kg.dev.shared.feature.player.ui.AndroidYouTubePlaybackAdapter
 import kg.dev.shared.feature.history.domain.HistoryRepository
 import kg.dev.videoplayer.presentation.main.MainScreen
 import org.koin.android.ext.android.get
@@ -51,7 +53,10 @@ class MainActivity : ComponentActivity() {
                     videoPlayerController = get<VideoPlayerController>(),
                     historyRepository = get<HistoryRepository>(),
                     initialPositionMs = configuration.startPositionMs,
-                    nowEpochMillis = System::currentTimeMillis
+                    nowEpochMillis = System::currentTimeMillis,
+                    providerPlaybackAdapters = ProviderPlaybackAdapterRegistry(
+                        listOf(AndroidYouTubePlaybackAdapter)
+                    )
                 )
             }
         )

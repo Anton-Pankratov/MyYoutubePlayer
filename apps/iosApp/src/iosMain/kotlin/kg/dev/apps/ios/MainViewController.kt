@@ -19,8 +19,8 @@ import kg.dev.shared.feature.home.presentation.HomeMediaAvailability
 import kg.dev.shared.feature.player.DefaultMediaOpenCoordinator
 import kg.dev.shared.feature.player.PlaybackSourceResolverRegistry
 import kg.dev.shared.feature.player.ui.ProviderPlayerContent
-import kg.dev.shared.feature.player.ui.ProviderPlaybackAdapter
-import kg.dev.shared.feature.player.ui.ProviderPlaybackAdapterRegistry
+import kg.dev.shared.feature.player.ProviderPlaybackAdapterRegistry
+import kg.dev.shared.feature.player.RenderOnlyProviderPlaybackAdapter
 import kg.dev.shared.feature.player.ui.IosYouTubePlayer
 import kg.dev.shared.core.common.media.MediaProviders
 import org.koin.core.context.startKoin
@@ -54,7 +54,7 @@ fun MainViewController(youtubeApiKey: String): UIViewController {
                         modifier = modifier,
                         providerAdapters = ProviderPlaybackAdapterRegistry(
                             listOf(
-                                ProviderPlaybackAdapter(MediaProviders.YouTube) { reference, position, surfaceModifier ->
+                                RenderOnlyProviderPlaybackAdapter(MediaProviders.YouTube) { reference, position, surfaceModifier ->
                                 IosYouTubePlayer(reference.externalId, position, surfaceModifier)
                                 }
                             )

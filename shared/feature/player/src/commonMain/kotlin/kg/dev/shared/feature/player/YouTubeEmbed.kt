@@ -32,6 +32,19 @@ fun youtubePlayerHtml(videoId: String, startPositionMs: Long = 0): String? {
           <div id="player"></div>
           <script src="https://www.youtube.com/iframe_api"></script>
           <script>
+            var player;
+            var progressTimer;
+            function reportProgress() {
+              if (!player) return;
+              AndroidPlayerBridge.onProgress(player.getCurrentTime(), player.getDuration());
+            }
+            function startProgressReporting() {
+              if (!progressTimer) progressTimer = setInterval(reportProgress, 1000);
+            }
+            function stopProgressReporting() {
+              if (progressTimer) clearInterval(progressTimer);
+              progressTimer = null;
+            }
             function onYouTubeIframeAPIReady() {
               new YT.Player('player', {
                 width: '100%',
@@ -45,7 +58,16 @@ fun youtubePlayerHtml(videoId: String, startPositionMs: Long = 0): String? {
                   origin: '$YOUTUBE_EMBED_APP_ORIGIN'
                 },
                 events: {
-                  onReady: function() { AndroidPlayerBridge.onReady(); },
+                  onReady: function(event) {
+                    player = event.target;
+                    AndroidPlayerBridge.onReady();
+                  },
+                  onStateChange: function(event) {
+                    var position = player ? player.getCurrentTime() : 0;
+                    var duration = player ? player.getDuration() : 0;
+                    AndroidPlayerBridge.onStateChanged(String(event.data), position, duration);
+                    if (event.data === 1) startProgressReporting(); else stopProgressReporting();
+                  },
                   onError: function(event) { AndroidPlayerBridge.onError(String(event.data)); }
                 }
               });

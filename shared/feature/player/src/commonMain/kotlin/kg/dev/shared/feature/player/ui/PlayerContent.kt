@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.outlined.LiveTv
 import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -44,34 +45,15 @@ import kg.dev.shared.core.ui.design.ProviderBadge
 import kg.dev.shared.core.common.media.MediaCatalogItem
 import kg.dev.shared.core.common.media.MediaProviderId
 import kg.dev.shared.core.common.media.MediaReference
+import kg.dev.shared.feature.player.ProviderPlaybackAdapterRegistry
+import kg.dev.shared.feature.player.ProviderPlaybackSession
 import kg.dev.shared.feature.player.PlaybackSource
+import kg.dev.shared.feature.player.PlaybackState
 import kg.dev.shared.feature.player.PlayableMedia
 import kg.dev.shared.feature.player.PlayerError
 import kg.dev.shared.feature.player.presentation.PlayerComponent
 import kg.dev.shared.feature.player.presentation.PlayerUiState
 import kg.dev.shared.core.ui.navigation.PlayerComponent as NavigationPlayerComponent
-
-typealias ProviderMediaSurface = @Composable (reference: MediaReference, startPositionMs: Long, modifier: Modifier) -> Unit
-
-/** Platform-owned, approved in-app surface for one provider. */
-class ProviderPlaybackAdapter(
-    val providerId: MediaProviderId,
-    val surface: ProviderMediaSurface
-)
-
-class ProviderPlaybackAdapterRegistry(adapters: List<ProviderPlaybackAdapter>) {
-    private val byProvider = adapters.associateBy(ProviderPlaybackAdapter::providerId)
-
-    init {
-        require(byProvider.size == adapters.size) { "Duplicate provider playback adapter registration" }
-    }
-
-    operator fun get(providerId: MediaProviderId): ProviderPlaybackAdapter? = byProvider[providerId]
-
-    companion object {
-        val Empty = ProviderPlaybackAdapterRegistry(emptyList())
-    }
-}
 
 @Composable
 fun PlayerContent(
@@ -89,7 +71,8 @@ fun PlayerContent(
         onRetry = component::retry,
         modifier = modifier,
         mediaSurface = mediaSurface,
-        providerAdapters = providerAdapters
+        providerAdapters = providerAdapters,
+        providerSession = component.providerPlaybackSession
     )
 }
 
@@ -105,17 +88,18 @@ fun ProviderPlayerContent(
     } else {
         PlaybackSource.ProviderControlled(reference)
     }
-    val state = PlayerUiState(
-        media = PlayableMedia(
-            catalogItem = MediaCatalogItem(
-                reference = reference,
-                title = component.title ?: component.mediaId,
-                thumbnailUrl = component.thumbnailUrl,
-                authorTitle = component.authorTitle,
-                durationMs = component.catalogDurationMs
-            ),
-            source = source
+    val media = PlayableMedia(
+        catalogItem = MediaCatalogItem(
+            reference = reference,
+            title = component.title ?: component.mediaId,
+            thumbnailUrl = component.thumbnailUrl,
+            authorTitle = component.authorTitle,
+            durationMs = component.catalogDurationMs
         ),
+        source = source
+    )
+    val state = PlayerUiState(
+        media = media,
         positionMs = component.startPositionMs
     )
     PlayerContent(
@@ -138,7 +122,8 @@ fun PlayerContent(
     onRetry: () -> Unit,
     modifier: Modifier = Modifier,
     mediaSurface: @Composable ((Modifier) -> Unit)? = null,
-    providerAdapters: ProviderPlaybackAdapterRegistry = ProviderPlaybackAdapterRegistry.Empty
+    providerAdapters: ProviderPlaybackAdapterRegistry = ProviderPlaybackAdapterRegistry.Empty,
+    providerSession: ProviderPlaybackSession? = null
 ) {
     val media = state.media
     val source = media?.source
@@ -147,6 +132,7 @@ fun PlayerContent(
         providerAdapters[it.reference.provider]
     }
     val canUseProviderPlayer = providerAdapter != null
+    val canControlProviderPlayer = canUseProviderPlayer && providerSession?.capabilities?.canPlayPause == true
 
     BoxWithConstraints(modifier.fillMaxSize().background(MediaTheme.colors.background)) {
         val contentPadding = if (maxWidth < 600.dp) MediaSpacing.md else MediaSpacing.xxl
@@ -164,8 +150,9 @@ fun PlayerContent(
             ) {
                 when {
                     canUseNativePlayer -> mediaSurface?.invoke(Modifier.fillMaxSize())
-                    canUseProviderPlayer -> providerAdapter?.surface?.invoke(
-                        source.reference,
+                    canUseProviderPlayer -> providerAdapter?.Surface(
+                        providerSession,
+                        media,
                         state.positionMs,
                         Modifier.fillMaxSize()
                     )
@@ -177,6 +164,9 @@ fun PlayerContent(
                         title = "Playback unavailable",
                         message = "This video cannot currently be played inside the application."
                     )
+                }
+                if ((canUseNativePlayer || canUseProviderPlayer) && state.playbackState.isLoadingIndicatorVisible) {
+                    CircularProgressIndicator(color = MediaTheme.colors.primary)
                 }
             }
 
@@ -198,11 +188,21 @@ fun PlayerContent(
                     media?.catalogItem?.reference?.provider?.value?.let { ProviderBadge(it) }
                 }
 
-                if (canUseNativePlayer) {
-                    PlaybackControls(state, onPlay, onPause, onSeek)
+                if (canUseNativePlayer || canControlProviderPlayer) {
+                    PlaybackControls(
+                        state = state,
+                        onPlay = onPlay,
+                        onPause = onPause,
+                        onSeek = onSeek,
+                        canSeek = canUseNativePlayer || providerSession?.capabilities?.canSeek == true
+                    )
                 }
 
-                state.error?.takeUnless { it == PlayerError.UnsupportedMedia && source is PlaybackSource.ProviderControlled }?.let { error ->
+                state.error?.takeUnless {
+                    it == PlayerError.UnsupportedMedia &&
+                        source is PlaybackSource.ProviderControlled &&
+                        providerAdapter == null
+                }?.let { error ->
                     ErrorState(
                         title = "Playback interrupted",
                         message = errorMessage(error),
@@ -369,14 +369,16 @@ private fun PlaybackControls(
     state: PlayerUiState,
     onPlay: () -> Unit,
     onPause: () -> Unit,
-    onSeek: (Long) -> Unit
+    onSeek: (Long) -> Unit,
+    canSeek: Boolean
 ) {
     val duration = state.durationMs?.takeIf { it > 0 }
+    val isReplay = state.playbackState == PlaybackState.Completed
     Column(verticalArrangement = Arrangement.spacedBy(MediaSpacing.xs)) {
         Slider(
             value = if (duration == null) 0f else state.positionMs.coerceIn(0, duration).toFloat(),
             onValueChange = { onSeek(it.toLong()) },
-            enabled = duration != null,
+            enabled = duration != null && canSeek,
             valueRange = 0f..(duration?.toFloat() ?: 1f),
             modifier = Modifier.fillMaxWidth(),
             colors = SliderDefaults.colors(
@@ -396,7 +398,11 @@ private fun PlaybackControls(
             ) {
                 Icon(
                     if (state.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                    if (state.isPlaying) "Pause" else "Play",
+                    when {
+                        state.isPlaying -> "Pause"
+                        isReplay -> "Replay"
+                        else -> "Play"
+                    },
                     modifier = Modifier.size(28.dp)
                 )
             }
@@ -409,6 +415,9 @@ private fun PlaybackControls(
         }
     }
 }
+
+private val PlaybackState.isLoadingIndicatorVisible: Boolean
+    get() = this == PlaybackState.Loading || this == PlaybackState.Buffering
 
 private fun errorMessage(error: PlayerError): String = when (error) {
     PlayerError.UnsupportedMedia -> "This source isn’t supported by the current player."
