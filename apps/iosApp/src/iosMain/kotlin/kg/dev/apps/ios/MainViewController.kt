@@ -17,12 +17,16 @@ import kg.dev.shared.feature.history.domain.HistoryRepository
 import kg.dev.shared.feature.home.presentation.DefaultHomeComponent
 import kg.dev.shared.feature.home.presentation.HomeMediaAvailability
 import kg.dev.shared.feature.player.DefaultMediaOpenCoordinator
+import kg.dev.shared.feature.player.IosUnavailableVideoPlayerController
+import kg.dev.shared.feature.player.PlayableMedia
+import kg.dev.shared.feature.player.PlaybackSource
 import kg.dev.shared.feature.player.PlaybackSourceResolverRegistry
-import kg.dev.shared.feature.player.ui.ProviderPlayerContent
 import kg.dev.shared.feature.player.ProviderPlaybackAdapterRegistry
-import kg.dev.shared.feature.player.RenderOnlyProviderPlaybackAdapter
-import kg.dev.shared.feature.player.ui.IosYouTubePlayer
-import kg.dev.shared.core.common.media.MediaProviders
+import kg.dev.shared.feature.player.presentation.DefaultPlayerComponent
+import kg.dev.shared.feature.player.ui.IosYouTubePlaybackAdapter
+import kg.dev.shared.core.common.media.MediaCatalogItem
+import kg.dev.shared.core.common.media.MediaProviderId
+import kg.dev.shared.core.common.media.MediaReference
 import org.koin.core.context.startKoin
 import org.koin.dsl.module
 import platform.UIKit.UIViewController
@@ -34,7 +38,33 @@ fun MainViewController(youtubeApiKey: String): UIViewController {
     rootComponent = DefaultRootComponent(
         componentContext = DefaultComponentContext(LifecycleRegistry()),
         mediaOpenCoordinator = DefaultMediaOpenCoordinator(PlaybackSourceResolverRegistry(emptySet())),
-        searchComponentFactory = { childContext -> DefaultSearchComponent(childContext, koin.get<SearchChannelsUseCase>(), onMediaSelected = rootComponent::openMedia) }
+        searchComponentFactory = { childContext -> DefaultSearchComponent(childContext, koin.get<SearchChannelsUseCase>(), onMediaSelected = rootComponent::openMedia) },
+        playerComponentFactory = { childContext, configuration ->
+            val reference = MediaReference(MediaProviderId(configuration.providerId), configuration.externalId)
+            val source = if (configuration.playbackKind == "direct") {
+                PlaybackSource.Direct(configuration.directUri.orEmpty(), configuration.mimeType)
+            } else {
+                PlaybackSource.ProviderControlled(reference)
+            }
+            DefaultPlayerComponent(
+                componentContext = childContext,
+                media = PlayableMedia(
+                    MediaCatalogItem(
+                        reference = reference,
+                        title = configuration.title ?: configuration.externalId,
+                        thumbnailUrl = configuration.thumbnailUrl,
+                        authorTitle = configuration.authorTitle,
+                        durationMs = configuration.catalogDurationMs
+                    ),
+                    source
+                ),
+                videoPlayerController = IosUnavailableVideoPlayerController(),
+                historyRepository = koin.get<HistoryRepository>(),
+                initialPositionMs = configuration.startPositionMs,
+                nowEpochMillis = { kotlin.system.getTimeMillis() },
+                providerPlaybackAdapters = ProviderPlaybackAdapterRegistry(listOf(IosYouTubePlaybackAdapter))
+            )
+        }
     )
     return ComposeUIViewController {
         MediaAppTheme {
@@ -49,16 +79,10 @@ fun MainViewController(youtubeApiKey: String): UIViewController {
                     )
                 },
                 playerContent = { component, modifier ->
-                    ProviderPlayerContent(
-                        component = component,
+                    kg.dev.shared.feature.player.ui.PlayerContent(
+                        component = component as DefaultPlayerComponent,
                         modifier = modifier,
-                        providerAdapters = ProviderPlaybackAdapterRegistry(
-                            listOf(
-                                RenderOnlyProviderPlaybackAdapter(MediaProviders.YouTube) { reference, position, surfaceModifier ->
-                                IosYouTubePlayer(reference.externalId, position, surfaceModifier)
-                                }
-                            )
-                        )
+                        providerAdapters = component.providerPlaybackAdapters
                     )
                 }
             )
