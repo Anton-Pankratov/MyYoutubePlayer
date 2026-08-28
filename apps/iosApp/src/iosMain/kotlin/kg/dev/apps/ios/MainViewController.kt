@@ -16,16 +16,17 @@ import kg.dev.shared.appshell.SharedAppContent
 import kg.dev.shared.feature.history.domain.HistoryRepository
 import kg.dev.shared.feature.home.presentation.DefaultHomeComponent
 import kg.dev.shared.feature.home.presentation.HomeMediaAvailability
-import kg.dev.shared.feature.player.DefaultMediaOpenCoordinator
-import kg.dev.shared.feature.player.IosUnavailableVideoPlayerController
+import kg.dev.shared.feature.player.IosVideoPlayerController
+import kg.dev.shared.feature.player.playerFeatureModule
 import kg.dev.shared.feature.player.PlayableMedia
 import kg.dev.shared.feature.player.PlaybackSource
-import kg.dev.shared.feature.player.PlaybackSourceResolverRegistry
 import kg.dev.shared.feature.player.ProviderPlaybackAdapterRegistry
 import kg.dev.shared.feature.player.presentation.DefaultPlayerComponent
 import kg.dev.shared.feature.player.ui.IosYouTubePlaybackAdapter
+import kg.dev.shared.feature.player.ui.IosPlayerContent
 import kg.dev.shared.core.common.media.MediaCatalogItem
 import kg.dev.shared.core.common.media.MediaProviderId
+import kg.dev.shared.core.common.media.MediaProviders
 import kg.dev.shared.core.common.media.MediaReference
 import org.koin.core.context.startKoin
 import org.koin.dsl.module
@@ -33,11 +34,11 @@ import platform.UIKit.UIViewController
 import kg.dev.shared.core.ui.design.MediaAppTheme
 
 fun MainViewController(youtubeApiKey: String): UIViewController {
-    val koin = startKoin { modules(commonModules() + iosModule(youtubeApiKey)) }.koin
+    val koin = startKoin { modules(commonModules() + playerFeatureModule + iosModule(youtubeApiKey)) }.koin
     lateinit var rootComponent: DefaultRootComponent<SearchComponent>
     rootComponent = DefaultRootComponent(
         componentContext = DefaultComponentContext(LifecycleRegistry()),
-        mediaOpenCoordinator = DefaultMediaOpenCoordinator(PlaybackSourceResolverRegistry(emptySet())),
+        mediaOpenCoordinator = koin.get(),
         searchComponentFactory = { childContext -> DefaultSearchComponent(childContext, koin.get<SearchChannelsUseCase>(), onMediaSelected = rootComponent::openMedia) },
         playerComponentFactory = { childContext, configuration ->
             val reference = MediaReference(MediaProviderId(configuration.providerId), configuration.externalId)
@@ -58,7 +59,7 @@ fun MainViewController(youtubeApiKey: String): UIViewController {
                     ),
                     source
                 ),
-                videoPlayerController = IosUnavailableVideoPlayerController(),
+                videoPlayerController = IosVideoPlayerController(),
                 historyRepository = koin.get<HistoryRepository>(),
                 initialPositionMs = configuration.startPositionMs,
                 nowEpochMillis = { kotlin.system.getTimeMillis() },
@@ -74,16 +75,14 @@ fun MainViewController(youtubeApiKey: String): UIViewController {
                     DefaultHomeComponent(
                         componentContext = context,
                         historyRepository = koin.get<HistoryRepository>(),
-                        mediaAvailability = HomeMediaAvailability { false },
+                        mediaAvailability = HomeMediaAvailability {
+                            it.provider == MediaProviders.Direct || it.provider == MediaProviders.YouTube
+                        },
                         onItemSelected = selected
                     )
                 },
                 playerContent = { component, modifier ->
-                    kg.dev.shared.feature.player.ui.PlayerContent(
-                        component = component as DefaultPlayerComponent,
-                        modifier = modifier,
-                        providerAdapters = component.providerPlaybackAdapters
-                    )
+                    IosPlayerContent(component as DefaultPlayerComponent, modifier)
                 }
             )
         }
