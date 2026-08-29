@@ -20,6 +20,9 @@ import kg.dev.shared.feature.player.PlaybackState
 import kg.dev.shared.feature.player.PlayerError
 import kg.dev.shared.feature.player.PlayerState
 import kg.dev.shared.feature.player.VideoPlayerController
+import kg.dev.shared.feature.player.library.SavedMedia
+import kg.dev.shared.feature.player.library.SavedMediaRepository
+import kg.dev.shared.feature.player.library.SavedMediaState
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -313,6 +316,90 @@ class PlayerComponentTest {
         advanceUntilIdle()
     }
 
+    @Test
+    fun savedMediaStateIsReactiveAndCommandsRemainIndependent() = runTest {
+        val lifecycle = LifecycleRegistry().also { it.onCreate() }
+        val controller = FakeController()
+        val saved = RecordingSavedMediaRepository()
+        val component = DefaultPlayerComponent(
+            DefaultComponentContext(lifecycle), media(), controller, RecordingHistoryRepository(),
+            savedMediaRepository = saved, nowEpochMillis = { 99 },
+            coroutineContext = StandardTestDispatcher(testScheduler)
+        )
+
+        advanceUntilIdle()
+        assertFalse(component.state.value.isFavorite)
+        assertFalse(component.state.value.isWatchLater)
+        saved.emit(media().catalogItem.reference, SavedMediaState(isFavorite = true))
+        advanceUntilIdle()
+        assertTrue(component.state.value.isFavorite)
+        assertFalse(component.state.value.isWatchLater)
+        saved.emit(media().catalogItem.reference, SavedMediaState(isFavorite = true, isWatchLater = true))
+        advanceUntilIdle()
+        assertTrue(component.state.value.isWatchLater)
+
+        component.setFavorite(false)
+        advanceUntilIdle()
+        component.setWatchLater(false)
+        advanceUntilIdle()
+        assertEquals(listOf(false), saved.favoriteWrites.map { it.second })
+        assertEquals(listOf(false), saved.watchLaterWrites.map { it.second })
+
+        lifecycle.onDestroy()
+        advanceUntilIdle()
+        saved.emit(media().catalogItem.reference, SavedMediaState())
+        advanceUntilIdle()
+        assertTrue(component.state.value.isFavorite)
+    }
+
+    @Test fun initialFavoriteOnlySavedStateIsPresented() = runTest { assertInitialSavedState(SavedMediaState(true, false), true, false) }
+    @Test fun initialWatchLaterOnlySavedStateIsPresented() = runTest { assertInitialSavedState(SavedMediaState(false, true), false, true) }
+    @Test fun initialBothSavedStateIsPresented() = runTest { assertInitialSavedState(SavedMediaState(true, true), true, true) }
+
+    @Test
+    fun failedSavedMediaWriteDoesNotCancelPlayerObservation() = runTest {
+        val lifecycle = LifecycleRegistry().also { it.onCreate() }
+        val saved = RecordingSavedMediaRepository(throwOnFavorite = true)
+        val component = DefaultPlayerComponent(DefaultComponentContext(lifecycle), media(), FakeController(), RecordingHistoryRepository(),
+            savedMediaRepository = saved, nowEpochMillis = { 99 }, coroutineContext = StandardTestDispatcher(testScheduler))
+        component.setFavorite(true); advanceUntilIdle()
+        saved.emit(media().catalogItem.reference, SavedMediaState(isWatchLater = true)); advanceUntilIdle()
+        assertFalse(component.state.value.isFavorite); assertTrue(component.state.value.isWatchLater)
+        lifecycle.onDestroy()
+    }
+
+    @Test
+    fun playbackHistoryAndSavedMediaActionsRemainIndependent() = runTest {
+        val lifecycle = LifecycleRegistry().also { it.onCreate() }
+        val history = RecordingHistoryRepository()
+        val saved = RecordingSavedMediaRepository(SavedMediaState(isWatchLater = true))
+        val controller = FakeController()
+        val component = DefaultPlayerComponent(DefaultComponentContext(lifecycle), media(), controller, history,
+            savedMediaRepository = saved, nowEpochMillis = { 99 }, coroutineContext = StandardTestDispatcher(testScheduler))
+        component.play(); advanceUntilIdle()
+        controller.publish(PlayerState(media(), PlaybackState.Playing, 5_000, 10_000)); advanceUntilIdle()
+        assertTrue(history.saved.isNotEmpty())
+        assertTrue(saved.favoriteWrites.isEmpty()); assertTrue(saved.watchLaterWrites.isEmpty())
+        val historyWrites = history.saved.size
+        component.setFavorite(true); component.setWatchLater(false); advanceUntilIdle()
+        assertEquals(historyWrites, history.saved.size)
+        saved.favoriteWrites.clear(); saved.watchLaterWrites.clear()
+        controller.publish(PlayerState(media(), PlaybackState.Completed, 10_000, 10_000)); advanceUntilIdle()
+        assertTrue(history.saved.size > historyWrites)
+        assertTrue(saved.watchLaterWrites.isEmpty())
+        lifecycle.onDestroy()
+    }
+
+    private suspend fun kotlinx.coroutines.test.TestScope.assertInitialSavedState(
+        state: SavedMediaState, favorite: Boolean, watchLater: Boolean
+    ) {
+        val lifecycle = LifecycleRegistry().also { it.onCreate() }
+        val component = DefaultPlayerComponent(DefaultComponentContext(lifecycle), media(), FakeController(), RecordingHistoryRepository(),
+            savedMediaRepository = RecordingSavedMediaRepository(state), nowEpochMillis = { 99 }, coroutineContext = StandardTestDispatcher(testScheduler))
+        advanceUntilIdle(); assertEquals(favorite, component.state.value.isFavorite); assertEquals(watchLater, component.state.value.isWatchLater)
+        lifecycle.onDestroy()
+    }
+
     private fun component(
         lifecycle: LifecycleRegistry,
         controller: FakeController,
@@ -371,6 +458,20 @@ class PlayerComponentTest {
         override suspend fun save(video: WatchedVideo) { saved += video }
         override suspend fun recent(limit: Long): List<WatchedVideo> = saved
         override suspend fun delete(reference: MediaReference) = Unit
+    }
+
+    private class RecordingSavedMediaRepository(
+        private val initial: SavedMediaState = SavedMediaState(), private val throwOnFavorite: Boolean = false
+    ) : SavedMediaRepository {
+        private val states = mutableMapOf<MediaReference, MutableStateFlow<SavedMediaState>>()
+        val favoriteWrites = mutableListOf<Pair<MediaCatalogItem, Boolean>>()
+        val watchLaterWrites = mutableListOf<Pair<MediaCatalogItem, Boolean>>()
+        override fun observe(reference: MediaReference) = states.getOrPut(reference) { MutableStateFlow(initial) }
+        override fun favorites() = MutableStateFlow(emptyList<SavedMedia>())
+        override fun watchLater() = MutableStateFlow(emptyList<SavedMedia>())
+        override suspend fun setFavorite(item: MediaCatalogItem, enabled: Boolean) { if (throwOnFavorite) error("write"); favoriteWrites += item to enabled }
+        override suspend fun setWatchLater(item: MediaCatalogItem, enabled: Boolean) { watchLaterWrites += item to enabled }
+        fun emit(reference: MediaReference, state: SavedMediaState) { observe(reference).value = state }
     }
 
     private class FakeProviderAdapter(

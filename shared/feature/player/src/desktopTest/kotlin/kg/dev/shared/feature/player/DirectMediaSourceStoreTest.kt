@@ -12,6 +12,7 @@ import kotlin.test.assertTrue
 import java.io.File
 import kg.dev.shared.core.common.media.MediaProviders
 import kg.dev.shared.core.common.media.MediaReference
+import kg.dev.shared.feature.player.library.SavedMedia
 
 class DirectMediaSourceStoreTest {
     @Test fun insertFindAndUpsertPreserveDirectMetadata() = runTest {
@@ -54,6 +55,18 @@ class DirectMediaSourceStoreTest {
             kg.dev.shared.core.common.media.MediaCatalogItem(MediaReference(MediaProviders.Direct, "missing"), "Missing")
         )
         assertEquals(PlaybackResolutionError.MediaUnavailable, assertIs<PlaybackResolution.Failed>(result).error); driver.close()
+    }
+
+    @Test fun savedDirectMediaReResolvesThroughPersistentSourceStore() = runTest {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY); PlayerDatabase.Schema.create(driver)
+        val descriptor = DirectMediaDescriptor("saved-direct", "Stored", "file:///saved.mp4", "video/mp4", durationMs = 1_000)
+        val provider = DirectMediaProvider(SqlDelightDirectMediaSourceStore(createPlayerDatabase(driver)))
+        provider.register(descriptor)
+        val saved = SavedMedia(MediaReference(MediaProviders.Direct, descriptor.id), "Library snapshot", null, null, null, true, false, 1, null)
+        val resolved = assertIs<PlaybackResolution.Resolved>(provider.resolve(saved.toCatalogItem()))
+        val source = assertIs<PlaybackSource.Direct>(resolved.media.source)
+        assertEquals("file:///saved.mp4", source.uri); assertEquals("video/mp4", source.mimeType)
+        driver.close()
     }
 
     @Test fun importedContentUriUsesStableApplicationIdentityAfterRestart() = runTest {

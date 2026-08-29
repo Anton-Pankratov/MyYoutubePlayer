@@ -3,7 +3,9 @@ package kg.dev.shared.feature.player
 import kg.dev.shared.core.common.media.MediaCatalogItem
 import kg.dev.shared.core.common.media.MediaProviderId
 import kg.dev.shared.core.common.media.MediaReference
+import kg.dev.shared.core.common.media.MediaProviders
 import kg.dev.shared.core.ui.navigation.MediaOpenResult
+import kg.dev.shared.feature.player.library.SavedMedia
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -54,6 +56,15 @@ class DefaultMediaOpenCoordinatorTest {
         assertEquals("direct", result.configuration.playbackKind)
         assertEquals("https://media.example/video.mp4", result.configuration.directUri)
         assertEquals("video/mp4", result.configuration.mimeType)
+    }
+
+    @Test
+    fun savedYoutubeMediaUsesProviderControlledOpenPath() = runTest {
+        val saved = SavedMedia(MediaReference(MediaProviders.YouTube, "saved-youtube"), "Saved", null, null, null, true, false, 1, null)
+        val result = assertIs<MediaOpenResult.Player>(DefaultMediaOpenCoordinator(PlaybackSourceResolverRegistry(emptySet())).open(saved.toCatalogItem()))
+        assertEquals("provider-controlled", result.configuration.playbackKind)
+        assertNull(result.configuration.directUri)
+        assertEquals("saved-youtube", result.configuration.externalId)
     }
 
     private fun catalogItem() = MediaCatalogItem(

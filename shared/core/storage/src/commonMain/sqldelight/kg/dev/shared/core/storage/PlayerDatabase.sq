@@ -19,6 +19,20 @@ CREATE TABLE directMediaSource (
     durationMs INTEGER
 );
 
+CREATE TABLE savedMedia (
+    providerId TEXT NOT NULL,
+    externalId TEXT NOT NULL,
+    title TEXT NOT NULL,
+    thumbnailUrl TEXT,
+    authorTitle TEXT,
+    durationMs INTEGER,
+    isFavorite INTEGER NOT NULL DEFAULT 0,
+    isWatchLater INTEGER NOT NULL DEFAULT 0,
+    favoriteAddedAtEpochMs INTEGER,
+    watchLaterAddedAtEpochMs INTEGER,
+    PRIMARY KEY(providerId, externalId)
+);
+
 upsertDirectMedia:
 INSERT OR REPLACE INTO directMediaSource(externalId, title, uri, mimeType, thumbnailUrl, authorTitle, durationMs)
 VALUES (?, ?, ?, ?, ?, ?, ?);
@@ -40,3 +54,25 @@ VALUES (?, ?, ?, ?, ?, ?, ?);
 
 deleteHistory:
 DELETE FROM playbackHistory WHERE providerId = ? AND externalId = ?;
+
+selectSavedMedia:
+SELECT * FROM savedMedia WHERE providerId = ? AND externalId = ?;
+
+selectFavorites:
+SELECT * FROM savedMedia
+WHERE isFavorite = 1
+ORDER BY favoriteAddedAtEpochMs DESC, providerId ASC, externalId ASC;
+
+selectWatchLater:
+SELECT * FROM savedMedia
+WHERE isWatchLater = 1
+ORDER BY watchLaterAddedAtEpochMs DESC, providerId ASC, externalId ASC;
+
+upsertSavedMedia:
+INSERT OR REPLACE INTO savedMedia(
+    providerId, externalId, title, thumbnailUrl, authorTitle, durationMs,
+    isFavorite, isWatchLater, favoriteAddedAtEpochMs, watchLaterAddedAtEpochMs
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+deleteSavedMedia:
+DELETE FROM savedMedia WHERE providerId = ? AND externalId = ?;

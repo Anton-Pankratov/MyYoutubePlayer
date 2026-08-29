@@ -36,6 +36,11 @@ kotlin {
     }
 }
 
+dependencies {
+    add("desktopTestImplementation", libs.sqldelight.sqlite.driver)
+    add("desktopTestImplementation", libs.koin.core)
+}
+
 android {
     namespace = "kg.dev.shared.appshell"
     compileSdk = 35

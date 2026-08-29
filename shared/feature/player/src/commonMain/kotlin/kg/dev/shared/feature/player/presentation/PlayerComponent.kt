@@ -11,7 +11,9 @@ data class PlayerUiState(
     val playbackState: PlaybackState = PlaybackState.Idle,
     val positionMs: Long = 0,
     val durationMs: Long? = null,
-    val bufferedPositionMs: Long? = null
+    val bufferedPositionMs: Long? = null,
+    val isFavorite: Boolean = false,
+    val isWatchLater: Boolean = false
 ) {
     val isPlaying: Boolean get() = playbackState == PlaybackState.Playing
     val isCompleted: Boolean get() = playbackState == PlaybackState.Completed
@@ -26,4 +28,6 @@ interface PlayerComponent {
     fun pause()
     fun seekTo(positionMs: Long)
     fun retry()
+    fun setFavorite(enabled: Boolean)
+    fun setWatchLater(enabled: Boolean)
 }

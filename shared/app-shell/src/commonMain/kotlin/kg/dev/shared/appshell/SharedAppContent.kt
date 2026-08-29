@@ -16,6 +16,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.PersonOutline
+import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -52,6 +53,9 @@ import kg.dev.shared.feature.home.presentation.HomeMediaItemUiModel
 import kg.dev.shared.feature.home.ui.HomeContent
 import kg.dev.shared.feature.search.presentation.SearchComponent
 import kg.dev.shared.feature.search.ui.SearchContent
+import kg.dev.shared.feature.player.library.LibraryComponent
+import kg.dev.shared.feature.player.library.LibraryContent
+import kg.dev.shared.feature.player.library.SavedMedia
 
 private data class Destination(
     val configuration: Configuration,
@@ -61,11 +65,13 @@ private data class Destination(
 )
 
 typealias HomeComponentFactory = (ComponentContext, (HomeMediaItemUiModel) -> Unit, (() -> Unit)?) -> HomeComponent
+typealias LibraryComponentFactory = (ComponentContext, (SavedMedia) -> Unit) -> LibraryComponent
 
 @Composable
 fun SharedAppContent(
     rootComponent: RootComponent<SearchComponent>,
     homeComponentFactory: HomeComponentFactory? = null,
+    libraryComponentFactory: LibraryComponentFactory? = null,
     onImportLocalMedia: (() -> Unit)? = null,
     playerContent: @Composable (PlayerComponent, Modifier) -> Unit = { player, modifier ->
         EmptyState("Playback unavailable", player.title ?: "This media cannot be played here.", modifier)
@@ -77,7 +83,7 @@ fun SharedAppContent(
     val destinations = listOf(
         Destination(Configuration.Home, "Home", Icons.Outlined.Home, rootComponent::showHome),
         Destination(Configuration.Search, "Discover", Icons.Outlined.Search, rootComponent::showSearch),
-        Destination(Configuration.Profile, "Profile", Icons.Outlined.PersonOutline, rootComponent::showProfile)
+        Destination(Configuration.Profile, "Library", Icons.Outlined.FavoriteBorder, rootComponent::showProfile)
     )
 
     AppSurface(Modifier.fillMaxSize()) {
@@ -90,6 +96,7 @@ fun SharedAppContent(
                         child = stack.active.instance,
                         rootComponent = rootComponent,
                         homeComponentFactory = homeComponentFactory,
+                        libraryComponentFactory = libraryComponentFactory,
                         onImportLocalMedia = onImportLocalMedia,
                         playerContent = playerContent,
                         modifier = contentModifier
@@ -103,6 +110,7 @@ fun SharedAppContent(
                         child = stack.active.instance,
                         rootComponent = rootComponent,
                         homeComponentFactory = homeComponentFactory,
+                        libraryComponentFactory = libraryComponentFactory,
                         onImportLocalMedia = onImportLocalMedia,
                         playerContent = playerContent,
                         modifier = Modifier.weight(1f).fillMaxSize()
@@ -172,6 +180,7 @@ private fun ActiveContent(
     child: RootComponent.Child<SearchComponent>,
     rootComponent: RootComponent<SearchComponent>,
     homeComponentFactory: HomeComponentFactory?,
+    libraryComponentFactory: LibraryComponentFactory?,
     onImportLocalMedia: (() -> Unit)?,
     playerContent: @Composable (PlayerComponent, Modifier) -> Unit,
     modifier: Modifier
@@ -191,11 +200,13 @@ private fun ActiveContent(
         }
         is RootComponent.Child.Search -> SearchContent(child.component, modifier)
         is RootComponent.Child.Player -> playerContent(child.component, modifier)
-        is RootComponent.Child.Profile -> EmptyState(
-            title = "Profile",
-            message = "Account preferences and playback settings will live here.",
-            modifier = modifier
-        )
+        is RootComponent.Child.Profile -> {
+            val library = libraryComponentFactory?.let { factory ->
+                remember(child.component) { factory(child.component as ComponentContext, rootComponent::openSavedMedia) }
+            }
+            if (library == null) EmptyState("Library is not available", "Saved media storage is not available on this platform yet.", modifier)
+            else LibraryContent(library, modifier)
+        }
     }
 }
 
@@ -209,6 +220,10 @@ internal fun <SearchComponent : Any> RootComponent<SearchComponent>.openHomeItem
         ),
         item.startPositionMs
     )
+}
+
+internal fun <SearchComponent : Any> RootComponent<SearchComponent>.openSavedMedia(item: SavedMedia) {
+    openMedia(item.toCatalogItem())
 }
 
 

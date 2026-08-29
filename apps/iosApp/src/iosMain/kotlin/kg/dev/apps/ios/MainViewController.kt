@@ -14,6 +14,8 @@ import kg.dev.shared.feature.search.presentation.DefaultSearchComponent
 import kg.dev.shared.feature.search.presentation.SearchComponent
 import kg.dev.shared.appshell.SharedAppContent
 import kg.dev.shared.feature.history.domain.HistoryRepository
+import kg.dev.shared.feature.player.library.SavedMediaRepository
+import kg.dev.shared.feature.player.library.DefaultLibraryComponent
 import kg.dev.shared.feature.home.presentation.DefaultHomeComponent
 import kg.dev.shared.feature.home.presentation.HomeMediaAvailability
 import kg.dev.shared.feature.player.IosVideoPlayerController
@@ -63,7 +65,8 @@ fun MainViewController(youtubeApiKey: String): UIViewController {
                 historyRepository = koin.get<HistoryRepository>(),
                 initialPositionMs = configuration.startPositionMs,
                 nowEpochMillis = { kotlin.system.getTimeMillis() },
-                providerPlaybackAdapters = ProviderPlaybackAdapterRegistry(listOf(IosYouTubePlaybackAdapter))
+                providerPlaybackAdapters = ProviderPlaybackAdapterRegistry(listOf(IosYouTubePlaybackAdapter)),
+                savedMediaRepository = koin.get<SavedMediaRepository>()
             )
         }
     )
@@ -80,6 +83,9 @@ fun MainViewController(youtubeApiKey: String): UIViewController {
                         },
                         onItemSelected = selected
                     )
+                },
+                libraryComponentFactory = { context, selected ->
+                    DefaultLibraryComponent(context, koin.get<SavedMediaRepository>(), selected)
                 },
                 playerContent = { component, modifier ->
                     IosPlayerContent(component as DefaultPlayerComponent, modifier)

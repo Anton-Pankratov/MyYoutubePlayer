@@ -1,0 +1,13 @@
+CREATE TABLE savedMedia (
+    providerId TEXT NOT NULL,
+    externalId TEXT NOT NULL,
+    title TEXT NOT NULL,
+    thumbnailUrl TEXT,
+    authorTitle TEXT,
+    durationMs INTEGER,
+    isFavorite INTEGER NOT NULL DEFAULT 0,
+    isWatchLater INTEGER NOT NULL DEFAULT 0,
+    favoriteAddedAtEpochMs INTEGER,
+    watchLaterAddedAtEpochMs INTEGER,
+    PRIMARY KEY(providerId, externalId)
+);

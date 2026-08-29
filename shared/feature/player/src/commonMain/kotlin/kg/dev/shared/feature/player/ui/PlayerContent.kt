@@ -19,6 +19,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.outlined.LiveTv
+import androidx.compose.material.icons.outlined.Favorite
+import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material.icons.outlined.WatchLater
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -69,6 +72,8 @@ fun PlayerContent(
         onPause = component::pause,
         onSeek = component::seekTo,
         onRetry = component::retry,
+        onSetFavorite = component::setFavorite,
+        onSetWatchLater = component::setWatchLater,
         modifier = modifier,
         mediaSurface = mediaSurface,
         providerAdapters = providerAdapters,
@@ -108,6 +113,8 @@ fun ProviderPlayerContent(
         onPause = {},
         onSeek = {},
         onRetry = {},
+        onSetFavorite = {},
+        onSetWatchLater = {},
         modifier = modifier,
         providerAdapters = providerAdapters
     )
@@ -120,6 +127,8 @@ fun PlayerContent(
     onPause: () -> Unit,
     onSeek: (Long) -> Unit,
     onRetry: () -> Unit,
+    onSetFavorite: (Boolean) -> Unit = {},
+    onSetWatchLater: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
     mediaSurface: @Composable ((Modifier) -> Unit)? = null,
     providerAdapters: ProviderPlaybackAdapterRegistry = ProviderPlaybackAdapterRegistry.Empty,
@@ -196,6 +205,17 @@ fun PlayerContent(
                         onSeek = onSeek,
                         canSeek = canUseNativePlayer || providerSession?.capabilities?.canSeek == true
                     )
+                }
+
+                Row(horizontalArrangement = Arrangement.spacedBy(MediaSpacing.sm)) {
+                    androidx.compose.material3.OutlinedButton(onClick = { onSetFavorite(!state.isFavorite) }) {
+                        Icon(if (state.isFavorite) Icons.Outlined.Favorite else Icons.Outlined.FavoriteBorder, null)
+                        Text(if (state.isFavorite) "Favorited" else "Favorite", Modifier.padding(start = MediaSpacing.xs))
+                    }
+                    androidx.compose.material3.OutlinedButton(onClick = { onSetWatchLater(!state.isWatchLater) }) {
+                        Icon(Icons.Outlined.WatchLater, null)
+                        Text(if (state.isWatchLater) "In Watch Later" else "Watch Later", Modifier.padding(start = MediaSpacing.xs))
+                    }
                 }
 
                 state.error?.takeUnless {

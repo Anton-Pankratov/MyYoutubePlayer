@@ -12,6 +12,7 @@ import kg.dev.shared.feature.player.PlaybackState
 import kg.dev.shared.feature.player.PlaybackSource
 import kg.dev.shared.feature.player.PlayerError
 import kg.dev.shared.feature.player.VideoPlayerController
+import kg.dev.shared.feature.player.library.SavedMediaRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -30,6 +31,7 @@ class DefaultPlayerComponent(
     private val initialPositionMs: Long = 0,
     private val nowEpochMillis: () -> Long,
     val providerPlaybackAdapters: ProviderPlaybackAdapterRegistry = ProviderPlaybackAdapterRegistry.Empty,
+    private val savedMediaRepository: SavedMediaRepository? = null,
     coroutineContext: CoroutineContext = Dispatchers.Default
 ) : PlayerComponent, NavigationPlayerComponent, ComponentContext by componentContext {
     private val resolvedInitialPositionMs = initialPositionMs.coerceAtLeast(0)
@@ -67,6 +69,16 @@ class DefaultPlayerComponent(
         when (media.source) {
             is PlaybackSource.Direct -> collectBackendState(videoPlayerController.state)
             is PlaybackSource.ProviderControlled -> providerPlaybackSession?.let { collectBackendState(it.state) }
+        }
+        savedMediaRepository?.let { repository ->
+            scope.launch {
+                repository.observe(media.catalogItem.reference).collect { saved ->
+                    if (!released) mutableState.value = mutableState.value.copy(
+                        isFavorite = saved.isFavorite,
+                        isWatchLater = saved.isWatchLater
+                    )
+                }
+            }
         }
     }
 
@@ -115,6 +127,16 @@ class DefaultPlayerComponent(
         }
     }
 
+    override fun setFavorite(enabled: Boolean) {
+        savedMediaRepository ?: return
+        scope.launch { runCatching { savedMediaRepository.setFavorite(media.catalogItem, enabled) } }
+    }
+
+    override fun setWatchLater(enabled: Boolean) {
+        savedMediaRepository ?: return
+        scope.launch { runCatching { savedMediaRepository.setWatchLater(media.catalogItem, enabled) } }
+    }
+
     private fun collectBackendState(backendState: StateFlow<kg.dev.shared.feature.player.PlayerState>) {
         scope.launch {
             var previousPlaybackState: PlaybackState = PlaybackState.Idle
@@ -125,7 +147,9 @@ class DefaultPlayerComponent(
                     playbackState = playerState.playbackState,
                     positionMs = playerState.positionMs,
                     durationMs = playerState.durationMs,
-                    bufferedPositionMs = playerState.bufferedPositionMs
+                    bufferedPositionMs = playerState.bufferedPositionMs,
+                    isFavorite = mutableState.value.isFavorite,
+                    isWatchLater = mutableState.value.isWatchLater
                 )
                 if (!playerState.isCompleted) completionPersisted = false
                 val shouldPersist = (playerState.isCompleted && !completionPersisted) ||

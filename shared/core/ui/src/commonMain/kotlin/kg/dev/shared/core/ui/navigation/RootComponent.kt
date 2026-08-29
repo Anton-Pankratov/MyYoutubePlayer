@@ -39,7 +39,7 @@ interface RootComponent<SearchComponent : Any> {
 }
 
 interface HomeComponent : ComponentContext
-interface ProfileComponent
+interface ProfileComponent : ComponentContext
 
 interface PlayerComponent {
     val mediaId: String
@@ -144,8 +144,7 @@ class DefaultRootComponent<SearchComponent : Any>(
 private class DefaultHomeComponent(componentContext: ComponentContext) :
     HomeComponent, ComponentContext by componentContext
 
-private class DefaultProfileComponent(componentContext: ComponentContext) :
-    ProfileComponent, ComponentContext by componentContext
+private class DefaultProfileComponent(componentContext: ComponentContext) : ProfileComponent, ComponentContext by componentContext
 
 private class DefaultPlayerComponent(
     componentContext: ComponentContext,
