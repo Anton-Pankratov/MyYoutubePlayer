@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -29,11 +30,29 @@ fun LibraryContent(component: LibraryComponent, modifier: Modifier = Modifier) {
         is LibraryUiState.Content -> {
             val content = state as LibraryUiState.Content
             Column(modifier.fillMaxSize().padding(MediaSpacing.lg), verticalArrangement = Arrangement.spacedBy(MediaSpacing.xl)) {
-                SavedSection("Favorites", content.favorites, component::open, component::removeFavorite, "No favorites yet")
-                SavedSection("Watch Later", content.watchLater, component::open, component::removeWatchLater, "Nothing in Watch Later")
+                OutlinedTextField(content.searchQuery, component::onSearchQueryChanged, Modifier.fillMaxWidth(), label = { Text("Search saved media") })
+                Row(horizontalArrangement = Arrangement.spacedBy(MediaSpacing.sm)) {
+                    SavedMediaFilter.entries.forEach { filter -> OutlinedButton(onClick = { component.onFilterSelected(filter) }) { Text(filter.label()) } }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(MediaSpacing.sm)) {
+                    SavedMediaSort.entries.forEach { sort -> OutlinedButton(onClick = { component.onSortSelected(sort) }) { Text(sort.label()) } }
+                }
+                if (!content.hasAnySavedMedia) EmptyState("Library", "Nothing saved yet")
+                else if (content.favorites.isEmpty() && content.watchLater.isEmpty()) EmptyState("No matches", "Try another search or filter")
+                else {
+                    if (content.showFavorites) SavedSection("Favorites", content.favorites, component::open, component::removeFavorite, "No favorites yet")
+                    if (content.showWatchLater) SavedSection("Watch Later", content.watchLater, component::open, component::removeWatchLater, "Nothing in Watch Later")
+                }
             }
         }
     }
+}
+
+private fun SavedMediaFilter.label() = when (this) {
+    SavedMediaFilter.All -> "All"; SavedMediaFilter.Favorites -> "Favorites"; SavedMediaFilter.WatchLater -> "Watch Later"; SavedMediaFilter.Both -> "Both"
+}
+private fun SavedMediaSort.label() = when (this) {
+    SavedMediaSort.RecentlySaved -> "Recently Saved"; SavedMediaSort.TitleAscending -> "Title A–Z"; SavedMediaSort.TitleDescending -> "Title Z–A"
 }
 
 @Composable
