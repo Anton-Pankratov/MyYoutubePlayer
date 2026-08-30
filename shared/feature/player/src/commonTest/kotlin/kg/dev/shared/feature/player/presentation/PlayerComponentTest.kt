@@ -259,7 +259,9 @@ class PlayerComponentTest {
 
         component.play()
         advanceUntilIdle()
-        assertEquals(1, session.loadCalls)
+        assertEquals(1, session.preloadCalls)
+        assertEquals(0, session.loadCalls)
+        assertEquals(1, session.playCalls)
         assertEquals(listOf(42_000L), session.seekCalls)
         assertEquals(0, controller.loadCalls)
 
@@ -273,7 +275,7 @@ class PlayerComponentTest {
         component.play()
         advanceUntilIdle()
         assertEquals(1, session.pauseCalls)
-        assertEquals(1, session.playCalls)
+        assertEquals(2, session.playCalls)
         assertEquals(listOf(42_000L), session.seekCalls)
 
         session.publish(PlayerState(media(providerControlled = true), PlaybackState.Completed, 99_000, 100_000))
@@ -492,6 +494,7 @@ class PlayerComponentTest {
         private val mutableState = MutableStateFlow(PlayerState())
         override val state: StateFlow<PlayerState> = mutableState
         override val capabilities = ProviderPlaybackCapabilities(true, true, true, true)
+        var preloadCalls = 0
         var loadCalls = 0
         var playCalls = 0
         var pauseCalls = 0
@@ -499,6 +502,10 @@ class PlayerComponentTest {
         var releaseCalls = 0
         val seekCalls = mutableListOf<Long>()
 
+        override suspend fun preload(media: PlayableMedia) {
+            preloadCalls++
+            mutableState.value = PlayerState(media, PlaybackState.Ready)
+        }
         override suspend fun load(media: PlayableMedia) {
             loadCalls++
             mutableState.value = PlayerState(media, PlaybackState.Loading)

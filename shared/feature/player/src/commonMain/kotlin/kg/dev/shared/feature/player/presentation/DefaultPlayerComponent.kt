@@ -68,7 +68,10 @@ class DefaultPlayerComponent(
         })
         when (media.source) {
             is PlaybackSource.Direct -> collectBackendState(videoPlayerController.state)
-            is PlaybackSource.ProviderControlled -> providerPlaybackSession?.let { collectBackendState(it.state) }
+            is PlaybackSource.ProviderControlled -> providerPlaybackSession?.let {
+                collectBackendState(it.state)
+                scope.launch { it.preload(media) }
+            }
         }
         savedMediaRepository?.let { repository ->
             scope.launch {
@@ -91,7 +94,7 @@ class DefaultPlayerComponent(
             when {
                 isFirstLoad -> {
                     if (media.source is PlaybackSource.Direct) videoPlayerController.play(media)
-                    else providerSession?.load(media)
+                    else providerSession?.play()
                     if (!initialSeekConsumed) {
                         initialSeekConsumed = true
                         seekBackendTo(resolvedInitialPositionMs)

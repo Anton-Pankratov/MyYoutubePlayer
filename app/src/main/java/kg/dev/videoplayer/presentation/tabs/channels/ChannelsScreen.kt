@@ -2,40 +2,48 @@ package kg.dev.videoplayer.presentation.tabs.channels
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
-import androidx.paging.LoadState
-import androidx.paging.compose.collectAsLazyPagingItems
-import kg.dev.videoplayer.data.events.AppEvents
 import kg.dev.videoplayer.presentation.tabs.channels.list.ChannelsList
+import kg.dev.videoplayer.presentation.view.error.ErrorScreen
 import kg.dev.videoplayer.presentation.view.progress.Progress
-import org.koin.androidx.compose.koinViewModel
+import org.koin.compose.koinInject
+import kotlinx.coroutines.flow.distinctUntilChanged
 
 @Composable
-fun ChannelsScreen(searchQuery: String?, viewModel: ChannelsViewModel = koinViewModel()) {
-    val channels = viewModel.channels.collectAsLazyPagingItems()
-    val pageLoadingState = viewModel.pageLoad.collectAsState()
-    val channelsIsLoading = channels.loadState.refresh is LoadState.Loading
+fun ChannelsScreen(viewModel: ChannelsViewModel = koinInject()) {
+    val state by viewModel.state.collectAsState()
+    val scrollState = rememberLazyListState()
 
-    LaunchedEffect(searchQuery) {
-        viewModel.findChannels(searchQuery)
+    LaunchedEffect(scrollState, state.items.size) {
+        snapshotFlow { scrollState.layoutInfo.visibleItemsInfo.lastOrNull()?.index }
+            .distinctUntilChanged()
+            .collect { lastVisibleIndex ->
+                if (lastVisibleIndex != null && lastVisibleIndex >= state.items.lastIndex) {
+                    viewModel.loadNextPage()
+                }
+            }
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        if (channelsIsLoading) {
+        if (state.isLoading) {
             Progress.Large().View()
+        } else if (state.error != null && state.items.isEmpty()) {
+            ErrorScreen(onRetry = viewModel::retry)
         } else {
             ChannelsList(
-                channels = channels,
+                channels = state.items,
+                listState = scrollState,
                 onItemClick = {
 
                 },
                 afterLastItem = {
-                    if (pageLoadingState.value == AppEvents.Channel.CallNextPage.Loading) {
-                        Progress.Small().View()
-                    }
+                    if (state.isLoadingMore) Progress.Small().View()
                 }
             )
         }

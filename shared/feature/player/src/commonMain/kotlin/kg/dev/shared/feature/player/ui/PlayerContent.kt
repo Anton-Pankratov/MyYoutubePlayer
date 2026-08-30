@@ -145,14 +145,9 @@ fun PlayerContent(
 
     BoxWithConstraints(modifier.fillMaxSize().background(MediaTheme.colors.background)) {
         val contentPadding = if (maxWidth < 600.dp) MediaSpacing.md else MediaSpacing.xxl
-        Column(
-            Modifier.fillMaxSize().widthIn(max = 1_200.dp).align(Alignment.TopCenter)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = contentPadding, vertical = MediaSpacing.xl),
-            verticalArrangement = Arrangement.spacedBy(MediaSpacing.xl)
-        ) {
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
             Box(
-                Modifier.fillMaxWidth().widthIn(max = 1_000.dp).align(Alignment.CenterHorizontally)
+                Modifier.fillMaxWidth()
                     .aspectRatio(16f / 9f)
                     .background(MediaTheme.colors.playerBackground, MediaShapes.large),
                 contentAlignment = Alignment.Center
@@ -180,7 +175,8 @@ fun PlayerContent(
             }
 
             Column(
-                Modifier.fillMaxWidth().widthIn(max = 1_000.dp).align(Alignment.CenterHorizontally),
+                Modifier.fillMaxWidth().widthIn(max = 1_200.dp).align(Alignment.CenterHorizontally)
+                    .padding(horizontal = contentPadding, vertical = MediaSpacing.xl),
                 verticalArrangement = Arrangement.spacedBy(MediaSpacing.lg)
             ) {
                 Row(horizontalArrangement = Arrangement.spacedBy(MediaSpacing.md), verticalAlignment = Alignment.Top) {
@@ -410,7 +406,7 @@ private fun PlaybackControls(
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             FilledIconButton(
                 onClick = if (state.isPlaying) onPause else onPlay,
-                modifier = Modifier.size(56.dp),
+                modifier = Modifier.size(44.dp),
                 colors = IconButtonDefaults.filledIconButtonColors(
                     containerColor = MediaTheme.colors.primary,
                     contentColor = MediaTheme.colors.onPrimary
@@ -423,7 +419,7 @@ private fun PlaybackControls(
                         isReplay -> "Replay"
                         else -> "Play"
                     },
-                    modifier = Modifier.size(28.dp)
+                    modifier = Modifier.size(22.dp)
                 )
             }
             Text(

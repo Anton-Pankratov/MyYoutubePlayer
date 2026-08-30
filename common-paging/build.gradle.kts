@@ -10,4 +10,5 @@ android {
 dependencies {
 
     implementation(libs.paging)
+    testImplementation(libs.junit)
 }

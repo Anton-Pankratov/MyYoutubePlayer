@@ -14,6 +14,8 @@ import kg.dev.shared.feature.home.presentation.HomeMediaAvailability
 import kg.dev.shared.feature.history.domain.HistoryRepository
 import kg.dev.shared.feature.player.presentation.PlayerComponent
 import kg.dev.shared.feature.player.ui.AndroidPlayerContent
+import kg.dev.shared.feature.player.library.DefaultLibraryComponent
+import kg.dev.shared.feature.player.library.SavedMediaRepository
 import kg.dev.shared.feature.search.presentation.SearchComponent
 import kg.dev.videoplayer.localmedia.AndroidLocalMediaImporter
 import kg.dev.videoplayer.localmedia.LocalMediaImportResult
@@ -24,6 +26,7 @@ import org.koin.compose.koinInject
 fun MainScreen(rootComponent: RootComponent<SearchComponent>) {
     val historyRepository = koinInject<HistoryRepository>()
     val localMediaImporter = koinInject<AndroidLocalMediaImporter>()
+    val savedMediaRepository = koinInject<SavedMediaRepository>()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val localVideoPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -45,6 +48,9 @@ fun MainScreen(rootComponent: RootComponent<SearchComponent>) {
                 onItemSelected = selected,
                 onLocalMediaImportRequested = onImportRequested
             )
+        },
+        libraryComponentFactory = { componentContext, selected ->
+            DefaultLibraryComponent(componentContext, savedMediaRepository, selected)
         },
         onImportLocalMedia = { localVideoPicker.launch(arrayOf("video/*")) }
     ) { navigationComponent, modifier ->

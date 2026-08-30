@@ -20,6 +20,7 @@ import kg.dev.shared.feature.player.ProviderPlaybackAdapterRegistry
 import kg.dev.shared.feature.player.presentation.DefaultPlayerComponent
 import kg.dev.shared.feature.player.ui.AndroidYouTubePlaybackAdapter
 import kg.dev.shared.feature.history.domain.HistoryRepository
+import kg.dev.shared.feature.player.library.SavedMediaRepository
 import kg.dev.videoplayer.presentation.main.MainScreen
 import org.koin.android.ext.android.get
 import kg.dev.shared.core.ui.design.MediaAppTheme
@@ -56,7 +57,8 @@ class MainActivity : ComponentActivity() {
                     nowEpochMillis = System::currentTimeMillis,
                     providerPlaybackAdapters = ProviderPlaybackAdapterRegistry(
                         listOf(AndroidYouTubePlaybackAdapter)
-                    )
+                    ),
+                    savedMediaRepository = get<SavedMediaRepository>()
                 )
             }
         )

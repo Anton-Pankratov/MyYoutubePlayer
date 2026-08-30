@@ -21,10 +21,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
-import kg.dev.videoplayer.data.channel.ChannelViewData
+import kg.dev.shared.feature.search.domain.model.Channel
 
 @Composable
-fun ChannelItem(channel: ChannelViewData, onClick: (ChannelViewData) -> Unit) {
+fun ChannelItem(channel: Channel, onClick: (Channel) -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -33,7 +33,7 @@ fun ChannelItem(channel: ChannelViewData, onClick: (ChannelViewData) -> Unit) {
         verticalAlignment = Alignment.CenterVertically
     ) {
         AsyncImage(
-            model = channel.thumbnail.default,
+            model = channel.thumbnailUrl,
             contentDescription = "Logo",
             modifier = Modifier
                 .size(48.dp)

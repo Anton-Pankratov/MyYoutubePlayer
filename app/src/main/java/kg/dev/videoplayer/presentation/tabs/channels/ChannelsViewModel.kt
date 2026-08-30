@@ -1,19 +1,16 @@
 package kg.dev.videoplayer.presentation.tabs.channels
 
-import androidx.lifecycle.viewModelScope
 import kg.dev.common.viewmodel.CommonViewModel
-import kg.dev.videoplayer.data.events.AppEvents.Channel.CallNextPage
-import kg.dev.videoplayer.domain.channel.SearchChannelsUseCase
-import kotlinx.coroutines.flow.StateFlow
-import org.koin.core.component.inject
-import org.koin.core.parameter.parametersOf
+import androidx.lifecycle.viewModelScope
+import kg.dev.shared.feature.search.domain.usecase.SearchChannelsUseCase
+import kg.dev.shared.feature.search.presentation.DefaultSearchComponent
+import kg.dev.shared.feature.search.presentation.SearchComponent
 
-class ChannelsViewModel: CommonViewModel() {
+class ChannelsViewModel(useCase: SearchChannelsUseCase) : CommonViewModel(), SearchComponent {
+    private val component = DefaultSearchComponent(useCase, viewModelScope)
+    override val state = component.state
 
-    private val useCase: SearchChannelsUseCase by inject { parametersOf(viewModelScope) }
-
-    val pageLoad: StateFlow<CallNextPage> = useCase.pageLoad
-    val channels = useCase.channels
-
-    fun findChannels(query: String?) = useCase.findChannels(query)
+    override fun onQueryChanged(query: String) = component.onQueryChanged(query)
+    override fun loadNextPage() = component.loadNextPage()
+    override fun retry() = component.retry()
 }

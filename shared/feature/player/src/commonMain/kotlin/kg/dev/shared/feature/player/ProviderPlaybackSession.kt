@@ -24,6 +24,8 @@ interface ProviderPlaybackSession {
     val state: StateFlow<PlayerState>
     val capabilities: ProviderPlaybackCapabilities
 
+    /** Prepares a visible first frame without starting playback. */
+    suspend fun preload(media: PlayableMedia)
     suspend fun load(media: PlayableMedia)
     fun play()
     fun pause()

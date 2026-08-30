@@ -67,7 +67,11 @@ private class AndroidYouTubePlaybackSession(
     private var pendingPlay = false
     private var pendingSeekMs: Long? = null
 
-    override suspend fun load(media: PlayableMedia) {
+    override suspend fun preload(media: PlayableMedia) = prepare(media, shouldPlay = false)
+
+    override suspend fun load(media: PlayableMedia) = prepare(media, shouldPlay = true)
+
+    private fun prepare(media: PlayableMedia, shouldPlay: Boolean) {
         if (youtubePlayerHtml(videoId) == null) {
             publish(PlaybackState.Error(PlayerError.UnsupportedMedia))
             return
@@ -75,7 +79,7 @@ private class AndroidYouTubePlaybackSession(
         this.media = media
         released = false
         ready = false
-        pendingPlay = true
+        pendingPlay = shouldPlay
         publish(PlaybackState.Loading)
         loadPlayerHtml()
     }
@@ -257,7 +261,10 @@ private fun AndroidYouTubePlayerSurface(session: AndroidYouTubePlaybackSession, 
                 view.setBackgroundColor(Color.BLACK)
                 view.settings.javaScriptEnabled = true
                 view.settings.domStorageEnabled = true
-                view.settings.mediaPlaybackRequiresUserGesture = true
+                // Play is explicitly initiated by the app's Player control. Requiring a second
+                // gesture inside the embedded YouTube surface leaves the native Play button
+                // spinning while the provider waits for an unrelated tap.
+                view.settings.mediaPlaybackRequiresUserGesture = false
                 view.settings.allowFileAccess = false
                 view.settings.allowContentAccess = false
                 view.settings.setSupportMultipleWindows(false)

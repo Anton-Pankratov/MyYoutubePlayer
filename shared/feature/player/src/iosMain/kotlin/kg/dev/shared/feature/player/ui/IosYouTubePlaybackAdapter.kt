@@ -78,7 +78,11 @@ internal class IosYouTubePlaybackSession(
     private var pendingSeekMs: Long? = null
     private var bridge: IosYouTubeBridge? = null
 
-    override suspend fun load(media: PlayableMedia) {
+    override suspend fun preload(media: PlayableMedia) = prepare(media, shouldPlay = false)
+
+    override suspend fun load(media: PlayableMedia) = prepare(media, shouldPlay = true)
+
+    private fun prepare(media: PlayableMedia, shouldPlay: Boolean) {
         if (youtubePlayerHtml(videoId) == null) {
             publish(PlaybackState.Error(PlayerError.UnsupportedMedia))
             return
@@ -86,7 +90,7 @@ internal class IosYouTubePlaybackSession(
         this.media = media
         released = false
         ready = false
-        pendingPlay = true
+        pendingPlay = shouldPlay
         publish(PlaybackState.Loading)
         loadPlayerHtml()
     }

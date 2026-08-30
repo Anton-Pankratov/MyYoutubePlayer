@@ -4,25 +4,31 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import kg.dev.common.logger.Logger
 import kg.dev.videoplayer.presentation.main.MainScreen
 import kg.dev.videoplayer.ui.theme.MyYoutubePlayerTheme
-import org.koin.core.component.KoinComponent
-import org.koin.core.component.inject
+import com.arkivanov.decompose.defaultComponentContext
+import kg.dev.shared.core.ui.navigation.DefaultRootComponent
+import kg.dev.shared.feature.search.domain.usecase.SearchChannelsUseCase
+import kg.dev.shared.feature.search.presentation.DefaultSearchComponent
+import kg.dev.shared.feature.search.presentation.SearchComponent
+import org.koin.android.ext.android.get
 
-class MainActivity : ComponentActivity(), KoinComponent {
-
-    private val logger: Logger by inject()
+class MainActivity : ComponentActivity() {
+    private val rootComponent by lazy {
+        lateinit var root: DefaultRootComponent<SearchComponent>
+        root = DefaultRootComponent(defaultComponentContext()) { childContext ->
+            DefaultSearchComponent(childContext, get<SearchChannelsUseCase>(), onMediaSelected = root::showPlayer)
+        }
+        root
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        logger.init()
-
         enableEdgeToEdge()
 
         setContent {
             MyYoutubePlayerTheme {
-                MainScreen()
+                MainScreen(rootComponent = rootComponent)
             }
         }
     }
