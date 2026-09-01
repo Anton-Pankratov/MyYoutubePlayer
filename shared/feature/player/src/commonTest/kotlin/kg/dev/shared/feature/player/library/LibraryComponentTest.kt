@@ -19,10 +19,56 @@ import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class LibraryComponentTest {
+    @Test fun recreatedComponentRestoresViewPreferencesButNotSearchQuery() = runTest {
+        val repository = FakeSavedMediaRepository()
+        val preferences = FakeLibraryViewPreferencesRepository()
+        val lifecycleA = LifecycleRegistry().also { it.onCreate() }
+        val componentA = DefaultLibraryComponent(DefaultComponentContext(lifecycleA), repository, preferences, {}, StandardTestDispatcher(testScheduler))
+        componentA.onSearchQueryChanged("ambient")
+        componentA.onFilterSelected(SavedMediaFilter.WatchLater)
+        componentA.onSortSelected(SavedMediaSort.TitleAscending)
+        advanceUntilIdle()
+        lifecycleA.onDestroy()
+
+        val lifecycleB = LifecycleRegistry().also { it.onCreate() }
+        val componentB = DefaultLibraryComponent(DefaultComponentContext(lifecycleB), repository, preferences, {}, StandardTestDispatcher(testScheduler))
+        advanceUntilIdle()
+        val restored = assertIs<LibraryUiState.Content>(componentB.state.value)
+        assertEquals("", restored.searchQuery)
+        assertEquals(SavedMediaFilter.WatchLater, restored.filter)
+        assertEquals(SavedMediaSort.TitleAscending, restored.sort)
+        lifecycleB.onDestroy()
+    }
+
+    @Test fun externalPreferenceEmissionRecalculatesContentWithoutChangingSearchQuery() = runTest {
+        val lifecycle = LifecycleRegistry().also { it.onCreate() }
+        val repository = FakeSavedMediaRepository()
+        val preferences = FakeLibraryViewPreferencesRepository()
+        val component = DefaultLibraryComponent(DefaultComponentContext(lifecycle), repository, preferences, {}, StandardTestDispatcher(testScheduler))
+        val favorite = media("youtube", "favorite", true, false, "Zulu", favoriteAt = 10)
+        val watchLater = media("direct", "watch", false, true, "Alpha", laterAt = 20)
+        repository.favoritesState.value = listOf(favorite)
+        repository.watchState.value = listOf(watchLater)
+        component.onSearchQueryChanged("a")
+        advanceUntilIdle()
+
+        preferences.emit(LibraryViewPreferences(SavedMediaFilter.WatchLater, SavedMediaSort.TitleAscending))
+        advanceUntilIdle()
+
+        val content = assertIs<LibraryUiState.Content>(component.state.value)
+        assertEquals("a", content.searchQuery)
+        assertEquals(SavedMediaFilter.WatchLater, content.filter)
+        assertEquals(SavedMediaSort.TitleAscending, content.sort)
+        assertEquals(listOf(watchLater), content.watchLater)
+        assertEquals(0, repository.favoriteWrites.size)
+        assertEquals(0, repository.watchWrites.size)
+        lifecycle.onDestroy()
+    }
+
     @Test fun matchingFiltersSortingAndRepositoryUpdatesRemainPresentationOnly() = runTest {
         val lifecycle = LifecycleRegistry().also { it.onCreate() }
         val repo = FakeSavedMediaRepository()
-        val component = DefaultLibraryComponent(DefaultComponentContext(lifecycle), repo, {}, StandardTestDispatcher(testScheduler))
+        val component = DefaultLibraryComponent(DefaultComponentContext(lifecycle), repo, FakeLibraryViewPreferencesRepository(), {}, StandardTestDispatcher(testScheduler))
         val f = media("youtube", "same", true, false, "Same", "Lofi Author", 10, null)
         val w = media("direct", "same", false, true, "Same", "Other", null, 20)
         val b = media("test", "both", true, true, "Beta", "Author", 5, 30)
@@ -66,7 +112,7 @@ class LibraryComponentTest {
     @Test fun searchFilterAndSortAreDerivedWithoutPersistenceWrites() = runTest {
         val lifecycle = LifecycleRegistry().also { it.onCreate() }
         val repo = FakeSavedMediaRepository()
-        val component = DefaultLibraryComponent(DefaultComponentContext(lifecycle), repo, {}, StandardTestDispatcher(testScheduler))
+        val component = DefaultLibraryComponent(DefaultComponentContext(lifecycle), repo, FakeLibraryViewPreferencesRepository(), {}, StandardTestDispatcher(testScheduler))
         val favorite = media("youtube", "same", true, false, "Lofi Morning", "Artist", 10, null)
         val watchLater = media("direct", "same", false, true, "Lofi Night", "Artist", null, 20)
         val both = media("test", "both", true, true, "Ambient Lofi", "Author", 15, 30)
@@ -83,7 +129,7 @@ class LibraryComponentTest {
         val lifecycle = LifecycleRegistry().also { it.onCreate() }
         val repo = FakeSavedMediaRepository()
         val selected = mutableListOf<SavedMedia>()
-        val component = DefaultLibraryComponent(DefaultComponentContext(lifecycle), repo, selected::add, StandardTestDispatcher(testScheduler))
+        val component = DefaultLibraryComponent(DefaultComponentContext(lifecycle), repo, FakeLibraryViewPreferencesRepository(), selected::add, StandardTestDispatcher(testScheduler))
         assertIs<LibraryUiState.Loading>(component.state.value)
         val youtube = media("youtube", "same", true, true)
         val direct = media("direct", "same", false, true)
@@ -103,7 +149,7 @@ class LibraryComponentTest {
     @Test fun repositoryFailureProducesNormalizedError() = runTest {
         val lifecycle = LifecycleRegistry().also { it.onCreate() }
         val repo = FakeSavedMediaRepository(favoritesFlow = flow { throw IllegalStateException("db") })
-        val component = DefaultLibraryComponent(DefaultComponentContext(lifecycle), repo, {}, StandardTestDispatcher(testScheduler))
+        val component = DefaultLibraryComponent(DefaultComponentContext(lifecycle), repo, FakeLibraryViewPreferencesRepository(), {}, StandardTestDispatcher(testScheduler))
         advanceUntilIdle()
         assertIs<LibraryUiState.Error>(component.state.value)
         lifecycle.onDestroy()
@@ -112,6 +158,16 @@ class LibraryComponentTest {
     private fun media(provider: String, id: String, favorite: Boolean, later: Boolean, title: String = provider, author: String? = null, favoriteAt: Long? = 1, laterAt: Long? = 2) = SavedMedia(
         MediaReference(MediaProviderId(provider), id), title, null, author, null, favorite, later, favoriteAt, laterAt
     )
+}
+
+private class FakeLibraryViewPreferencesRepository(
+    initial: LibraryViewPreferences = LibraryViewPreferences()
+) : LibraryViewPreferencesRepository {
+    private val mutablePreferences = MutableStateFlow(initial)
+    override val preferences = mutablePreferences
+    override suspend fun setFilter(filter: SavedMediaFilter) { mutablePreferences.value = mutablePreferences.value.copy(filter = filter) }
+    override suspend fun setSort(sort: SavedMediaSort) { mutablePreferences.value = mutablePreferences.value.copy(sort = sort) }
+    fun emit(preferences: LibraryViewPreferences) { mutablePreferences.value = preferences }
 }
 
 private class FakeSavedMediaRepository(

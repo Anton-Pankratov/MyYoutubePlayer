@@ -38,6 +38,7 @@ interface LibraryComponent {
 class DefaultLibraryComponent(
     componentContext: ComponentContext,
     private val repository: SavedMediaRepository,
+    private val viewPreferences: LibraryViewPreferencesRepository,
     private val onMediaSelected: (SavedMedia) -> Unit,
     coroutineContext: kotlin.coroutines.CoroutineContext = kotlinx.coroutines.Dispatchers.Default
 ) : LibraryComponent, ComponentContext by componentContext {
@@ -55,9 +56,17 @@ class DefaultLibraryComponent(
             override fun onDestroy() { scope.cancel() }
         })
         scope.launch {
-            combine(repository.observeFavorites(), repository.observeWatchLater()) { favorites, watchLater -> favorites to watchLater }
+            combine(repository.observeFavorites(), repository.observeWatchLater(), viewPreferences.preferences) { favorites, watchLater, preferences ->
+                Triple(favorites, watchLater, preferences)
+            }
                 .catch { mutableState.value = LibraryUiState.Error }
-                .collect { (favorites, watchLater) -> sourceFavorites = favorites; sourceWatchLater = watchLater; publishContent() }
+                .collect { (favorites, watchLater, preferences) ->
+                    sourceFavorites = favorites
+                    sourceWatchLater = watchLater
+                    filter = preferences.filter
+                    sort = preferences.sort
+                    publishContent()
+                }
         }
     }
 
@@ -65,8 +74,28 @@ class DefaultLibraryComponent(
     override fun removeFavorite(media: SavedMedia) { scope.launch { repository.setFavorite(media.toCatalogItem(), false) } }
     override fun removeWatchLater(media: SavedMedia) { scope.launch { repository.setWatchLater(media.toCatalogItem(), false) } }
     override fun onSearchQueryChanged(query: String) { this.query = query; publishContent() }
-    override fun onFilterSelected(filter: SavedMediaFilter) { this.filter = filter; publishContent() }
-    override fun onSortSelected(sort: SavedMediaSort) { this.sort = sort; publishContent() }
+    override fun onFilterSelected(filter: SavedMediaFilter) {
+        this.filter = filter
+        publishContent()
+        scope.launch {
+            runCatching { viewPreferences.setFilter(filter) }
+                .onFailure {
+                    this@DefaultLibraryComponent.filter = viewPreferences.preferences.value.filter
+                    publishContent()
+                }
+        }
+    }
+    override fun onSortSelected(sort: SavedMediaSort) {
+        this.sort = sort
+        publishContent()
+        scope.launch {
+            runCatching { viewPreferences.setSort(sort) }
+                .onFailure {
+                    this@DefaultLibraryComponent.sort = viewPreferences.preferences.value.sort
+                    publishContent()
+                }
+        }
+    }
 
     private fun publishContent() {
         val normalizedQuery = query.trim().lowercase()

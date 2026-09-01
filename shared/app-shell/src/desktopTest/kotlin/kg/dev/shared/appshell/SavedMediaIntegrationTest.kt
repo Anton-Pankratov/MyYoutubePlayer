@@ -18,7 +18,13 @@ import kg.dev.shared.feature.player.DirectMediaDescriptor
 import kg.dev.shared.feature.player.DirectMediaProvider
 import kg.dev.shared.feature.player.playerFeatureModule
 import kg.dev.shared.feature.player.library.DefaultLibraryComponent
+import kg.dev.shared.feature.player.library.LibraryViewPreferences
+import kg.dev.shared.feature.player.library.LibraryViewPreferencesRepository
+import kg.dev.shared.feature.player.library.LibraryViewPreferencesStorage
 import kg.dev.shared.feature.player.library.SavedMediaRepository
+import kg.dev.shared.feature.player.library.SavedMediaFilter
+import kg.dev.shared.feature.player.library.SavedMediaSort
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
@@ -54,7 +60,7 @@ class SavedMediaIntegrationTest {
             assertTrue(saved.observe(missing.reference).value.isFavorite)
             val present = item("library-root-direct")
             direct.register(DirectMediaDescriptor("library-root-direct", "Stored", "file:///stored.mp4", "video/mp4"))
-            val library = DefaultLibraryComponent(DefaultComponentContext(lifecycle), saved, { root.openMedia(it.toCatalogItem()) }, StandardTestDispatcher(testScheduler))
+            val library = DefaultLibraryComponent(DefaultComponentContext(lifecycle), saved, InMemoryLibraryViewPreferencesRepository(), { root.openMedia(it.toCatalogItem()) }, StandardTestDispatcher(testScheduler))
             saved.setFavorite(present, true); advanceUntilIdle(); library.open(saved.favorites().value.first { it.reference == present.reference }); advanceUntilIdle()
             val player = assertIs<Configuration.Player>(root.childStack.value.active.configuration)
             assertEquals("direct", player.providerId); assertEquals("library-root-direct", player.externalId); assertEquals("direct", player.playbackKind)
@@ -64,8 +70,24 @@ class SavedMediaIntegrationTest {
 
     private suspend fun withGraph(block: suspend (SavedMediaRepository, HistoryRepository, DirectMediaProvider, MediaOpenCoordinator, PlayerDatabase) -> Unit) {
         val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY); PlayerDatabase.Schema.create(driver); val database = createPlayerDatabase(driver)
-        startKoin { modules(module { single<PlayerDatabase> { database } }, historyFeatureModule, playerFeatureModule) }
+        startKoin { modules(module {
+            single<PlayerDatabase> { database }
+            single<LibraryViewPreferencesStorage> { InMemoryLibraryViewPreferencesStorage() }
+        }, historyFeatureModule, playerFeatureModule) }
         try { val koin = org.koin.java.KoinJavaComponent.getKoin(); block(koin.get(), koin.get(), koin.get(), koin.get(), database) } finally { stopKoin(); driver.close() }
     }
     private fun item(id: String) = MediaCatalogItem(MediaReference(MediaProviders.Direct, id), id)
+}
+
+private class InMemoryLibraryViewPreferencesRepository : LibraryViewPreferencesRepository {
+    private val mutablePreferences = MutableStateFlow(LibraryViewPreferences())
+    override val preferences = mutablePreferences
+    override suspend fun setFilter(filter: SavedMediaFilter) { mutablePreferences.value = mutablePreferences.value.copy(filter = filter) }
+    override suspend fun setSort(sort: SavedMediaSort) { mutablePreferences.value = mutablePreferences.value.copy(sort = sort) }
+}
+
+private class InMemoryLibraryViewPreferencesStorage : LibraryViewPreferencesStorage {
+    private val values = mutableMapOf<String, String>()
+    override fun read(key: String): String? = values[key]
+    override fun write(key: String, value: String) { values[key] = value }
 }

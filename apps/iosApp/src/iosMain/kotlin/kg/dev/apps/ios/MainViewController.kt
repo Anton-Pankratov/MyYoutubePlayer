@@ -16,6 +16,8 @@ import kg.dev.shared.appshell.SharedAppContent
 import kg.dev.shared.feature.history.domain.HistoryRepository
 import kg.dev.shared.feature.player.library.SavedMediaRepository
 import kg.dev.shared.feature.player.library.DefaultLibraryComponent
+import kg.dev.shared.feature.player.library.IosLibraryViewPreferencesStorage
+import kg.dev.shared.feature.player.library.LibraryViewPreferencesStorage
 import kg.dev.shared.feature.home.presentation.DefaultHomeComponent
 import kg.dev.shared.feature.home.presentation.HomeMediaAvailability
 import kg.dev.shared.feature.player.IosVideoPlayerController
@@ -85,7 +87,7 @@ fun MainViewController(youtubeApiKey: String): UIViewController {
                     )
                 },
                 libraryComponentFactory = { context, selected ->
-                    DefaultLibraryComponent(context, koin.get<SavedMediaRepository>(), selected)
+                    DefaultLibraryComponent(context, koin.get<SavedMediaRepository>(), koin.get(), selected)
                 },
                 playerContent = { component, modifier ->
                     IosPlayerContent(component as DefaultPlayerComponent, modifier)
@@ -98,6 +100,7 @@ fun MainViewController(youtubeApiKey: String): UIViewController {
 private fun iosModule(youtubeApiKey: String) = module {
     single<ApiConfigurationProvider> { IosApiConfiguration(youtubeApiKey) }
     single<SqlDriver> { NativeSqliteDriver(PlayerDatabase.Schema, "youtube-player.db") }
+    single<LibraryViewPreferencesStorage> { IosLibraryViewPreferencesStorage() }
 }
 
 private class IosApiConfiguration(

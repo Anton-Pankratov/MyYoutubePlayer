@@ -9,6 +9,10 @@ import kg.dev.shared.core.storage.createPlayerDatabase
 import kg.dev.shared.core.storage.db.PlayerDatabase
 import kg.dev.shared.feature.player.AndroidVideoPlayerController
 import kg.dev.shared.feature.player.VideoPlayerController
+import kg.dev.shared.feature.player.library.AndroidLibraryViewPreferencesStorage
+import kg.dev.shared.feature.player.library.LibraryViewPreferencesRepository
+import kg.dev.shared.feature.player.library.LibraryViewPreferencesStorage
+import kg.dev.shared.feature.player.library.PersistentLibraryViewPreferencesRepository
 import kg.dev.videoplayer.BuildConfig
 import org.koin.android.ext.koin.androidContext
 import org.koin.dsl.module
@@ -35,4 +39,6 @@ val androidPlatformModule = module {
     single<VideoPlayerController> {
         AndroidVideoPlayerController(androidContext())
     }
+    single<LibraryViewPreferencesStorage> { AndroidLibraryViewPreferencesStorage(androidContext()) }
+    single<LibraryViewPreferencesRepository> { PersistentLibraryViewPreferencesRepository(get()) }
 }
