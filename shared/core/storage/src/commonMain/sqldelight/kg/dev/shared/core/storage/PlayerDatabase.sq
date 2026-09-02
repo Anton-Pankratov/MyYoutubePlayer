@@ -49,12 +49,13 @@ CREATE TABLE collectionMedia (
     authorTitle TEXT,
     durationMs INTEGER,
     addedAtEpochMs INTEGER NOT NULL,
+    manualPosition INTEGER NOT NULL,
     PRIMARY KEY(collectionId, providerId, externalId),
     FOREIGN KEY(collectionId) REFERENCES mediaCollection(id) ON DELETE CASCADE
 );
 
-CREATE INDEX collectionMedia_by_collection_added
-ON collectionMedia(collectionId, addedAtEpochMs DESC, providerId, externalId);
+CREATE INDEX collectionMedia_by_collection_position
+ON collectionMedia(collectionId, manualPosition, providerId, externalId);
 
 CREATE INDEX mediaCollection_by_updated
 ON mediaCollection(updatedAtEpochMs DESC, name, id);
@@ -116,7 +117,7 @@ SELECT * FROM mediaCollection WHERE id = ?;
 selectCollectionItems:
 SELECT * FROM collectionMedia
 WHERE collectionId = ?
-ORDER BY addedAtEpochMs DESC, providerId ASC, externalId ASC;
+ORDER BY manualPosition ASC, providerId ASC, externalId ASC;
 
 selectCollectionIdsContaining:
 SELECT collectionId FROM collectionMedia
@@ -140,8 +141,17 @@ DELETE FROM mediaCollection WHERE id = ?;
 
 insertCollectionMedia:
 INSERT OR IGNORE INTO collectionMedia(
-    collectionId, providerId, externalId, title, thumbnailUrl, authorTitle, durationMs, addedAtEpochMs
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+    collectionId, providerId, externalId, title, thumbnailUrl, authorTitle, durationMs, addedAtEpochMs, manualPosition
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+selectNextCollectionPosition:
+SELECT COALESCE(MAX(manualPosition), -1) + 1
+FROM collectionMedia
+WHERE collectionId = ?;
+
+updateCollectionMediaPosition:
+UPDATE collectionMedia SET manualPosition = ?
+WHERE collectionId = ? AND providerId = ? AND externalId = ?;
 
 deleteCollectionMedia:
 DELETE FROM collectionMedia

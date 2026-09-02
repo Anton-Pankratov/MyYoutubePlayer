@@ -61,12 +61,20 @@ class SqlDelightMediaCollectionRepositoryTest {
         driver.execute(null, "INSERT INTO directMediaSource VALUES ('direct','Direct','file:///direct.mp4','video/mp4',NULL,NULL,NULL)", 0)
         driver.execute(null, "INSERT INTO savedMedia VALUES ('youtube','saved','Saved',NULL,NULL,NULL,1,0,3,NULL)", 0)
         PlayerDatabase.Schema.migrate(driver, 4, 5)
+        driver.execute(null, "INSERT INTO mediaCollection VALUES ('legacy','Legacy',4,4)", 0)
+        driver.execute(null, "INSERT INTO collectionMedia(collectionId,providerId,externalId,title,thumbnailUrl,authorTitle,durationMs,addedAtEpochMs) VALUES ('legacy','youtube','b','B',NULL,NULL,NULL,100)", 0)
+        driver.execute(null, "INSERT INTO collectionMedia(collectionId,providerId,externalId,title,thumbnailUrl,authorTitle,durationMs,addedAtEpochMs) VALUES ('legacy','direct','z','Z',NULL,NULL,NULL,100)", 0)
+        driver.execute(null, "INSERT INTO collectionMedia(collectionId,providerId,externalId,title,thumbnailUrl,authorTitle,durationMs,addedAtEpochMs) VALUES ('legacy','youtube','a','A',NULL,NULL,NULL,100)", 0)
+        driver.execute(null, "INSERT INTO collectionMedia(collectionId,providerId,externalId,title,thumbnailUrl,authorTitle,durationMs,addedAtEpochMs) VALUES ('legacy','youtube','new','New',NULL,NULL,NULL,200)", 0)
+        PlayerDatabase.Schema.migrate(driver, 5, 6)
         val database = createPlayerDatabase(driver)
         assertEquals("history", database.playerDatabaseQueries.selectRecent(1).executeAsOne().externalId)
         assertEquals("file:///direct.mp4", database.playerDatabaseQueries.findDirectMedia("direct").executeAsOne().uri)
         assertEquals("saved", database.playerDatabaseQueries.selectFavorites().executeAsOne().externalId)
+        assertEquals(listOf("new", "z", "a", "b"), database.playerDatabaseQueries.selectCollectionItems("legacy").executeAsList().map { it.externalId })
+        assertEquals(listOf(0L, 1L, 2L, 3L), database.playerDatabaseQueries.selectCollectionItems("legacy").executeAsList().map { it.manualPosition })
         val repository = SqlDelightMediaCollectionRepository(database, CollectionIdGenerator { CollectionId("migrated") }) { 4 }
-        assertTrue(repository.collections().value.isEmpty())
+        assertEquals(1, repository.collections().value.size)
         val collection = repository.create("Migrated")
         repository.addMedia(collection, media("youtube", "item", "Item"))
         assertEquals(1, repository.observeCollection(collection).value!!.items.size)
@@ -179,6 +187,42 @@ class SqlDelightMediaCollectionRepositoryTest {
         assertEquals(1, after.collection.itemCount)
         assertEquals(item, after.items.single().toCatalogItem())
         driver.close()
+    }
+
+    @Test fun denseMovesAppendCompactionAndProviderIdentityArePersistent() = runTest {
+        val file = File.createTempFile("collection-order", ".db").also { it.delete() }
+        val a = media("youtube", "a", "A")
+        val b = media("direct", "same", "B")
+        val c = media("youtube", "same", "C")
+        val d = media("youtube", "d", "D")
+        JdbcSqliteDriver("jdbc:sqlite:${file.absolutePath}").use { driver ->
+            PlayerDatabase.Schema.create(driver)
+            var now = 0L
+            val repo = SqlDelightMediaCollectionRepository(createPlayerDatabase(driver), CollectionIdGenerator { CollectionId("ordered") }) { ++now }
+            val id = repo.create("Ordered")
+            listOf(a, b, c, d).forEach { repo.addMedia(id, it) }
+            assertEquals(listOf("a", "same", "same", "d"), repo.observeCollection(id).value!!.items.map { it.reference.externalId })
+            val added = repo.observeCollection(id).value!!.items.associate { it.reference to it.addedAtEpochMs }
+            val unchangedAt = repo.observeCollection(id).value!!.collection.updatedAtEpochMs
+            repo.moveMedia(id, c.reference, b.reference)
+            assertEquals(listOf(a.reference, c.reference, b.reference, d.reference), repo.observeCollection(id).value!!.items.map { it.reference })
+            repo.moveMedia(id, b.reference, null)
+            assertEquals(listOf(a.reference, c.reference, d.reference, b.reference), repo.observeCollection(id).value!!.items.map { it.reference })
+            assertTrue(repo.observeCollection(id).value!!.collection.updatedAtEpochMs > unchangedAt)
+            val noOpAt = repo.observeCollection(id).value!!.collection.updatedAtEpochMs
+            repo.moveMedia(id, b.reference, null)
+            assertEquals(noOpAt, repo.observeCollection(id).value!!.collection.updatedAtEpochMs)
+            repo.removeMedia(id, a.reference)
+            assertEquals(listOf(c.reference, d.reference, b.reference), repo.observeCollection(id).value!!.items.map { it.reference })
+            repo.addMedia(id, a)
+            assertEquals(listOf(c.reference, d.reference, b.reference, a.reference), repo.observeCollection(id).value!!.items.map { it.reference })
+            assertEquals(added[c.reference], repo.observeCollection(id).value!!.items.first { it.reference == c.reference }.addedAtEpochMs)
+        }
+        JdbcSqliteDriver("jdbc:sqlite:${file.absolutePath}").use { driver ->
+            val repo = SqlDelightMediaCollectionRepository(createPlayerDatabase(driver)) { 99 }
+            assertEquals(listOf("same", "d", "same", "a"), repo.observeCollection(CollectionId("ordered")).value!!.items.map { it.reference.externalId })
+        }
+        file.delete()
     }
 
     private fun media(provider: String, id: String, title: String, thumbnail: String? = null, author: String? = null, duration: Long? = null) =

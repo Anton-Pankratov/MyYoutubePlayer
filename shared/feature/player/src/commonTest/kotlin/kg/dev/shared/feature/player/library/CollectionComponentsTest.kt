@@ -172,6 +172,22 @@ class CollectionComponentsTest {
         assertTrue(repository.collections().value.isEmpty())
     }
 
+    @Test fun detailMoveActionsMapToProviderQualifiedBeforeReferences() = runTest {
+        val repository = FakeCollections(); val id = CollectionId("move")
+        val a = item("youtube", "a", "A"); val b = item("direct", "same", "B"); val c = item("youtube", "same", "C")
+        repository.put(id, "Move", listOf(a, b, c))
+        val lifecycle = LifecycleRegistry().also { it.onCreate() }
+        val detail = DefaultCollectionDetailComponent(DefaultComponentContext(lifecycle), id, repository, {}, {}, StandardTestDispatcher(testScheduler))
+        advanceUntilIdle()
+        detail.moveUp(c.reference); advanceUntilIdle()
+        assertEquals(c.reference to b.reference, repository.moveCalls.single())
+        detail.moveDown(c.reference); advanceUntilIdle()
+        assertEquals(c.reference to null, repository.moveCalls.last())
+        val writes = repository.moveCalls.size
+        detail.moveUp(a.reference); detail.moveDown(c.reference); advanceUntilIdle()
+        assertEquals(writes, repository.moveCalls.size)
+    }
+
     private fun listComponent(repository: FakeCollections, dispatcher: TestDispatcher): DefaultCollectionListComponent {
         val lifecycle = LifecycleRegistry().also { it.onCreate() }
         return DefaultCollectionListComponent(DefaultComponentContext(lifecycle), repository, {}, dispatcher)
@@ -191,6 +207,7 @@ private class FakeCollections : MediaCollectionRepository {
     var removeCalls = 0
     var renameCalls = 0
     var deleteCalls = 0
+    val moveCalls = mutableListOf<Pair<MediaReference, MediaReference?>>()
     val deletedIds = mutableListOf<CollectionId>()
 
     override fun collections(): StateFlow<List<MediaCollection>> = collectionsState
@@ -229,6 +246,14 @@ private class FakeCollections : MediaCollectionRepository {
         if (detail.items.none { it.reference == reference }) return
         removeCalls++
         put(id, detail.collection.name, detail.items.filterNot { it.reference == reference }.map { it.toCatalogItem() })
+    }
+    override suspend fun moveMedia(id: CollectionId, reference: MediaReference, before: MediaReference?) {
+        val detail = requireNotNull(observeCollection(id).value)
+        val source = detail.items.first { it.reference == reference }.toCatalogItem()
+        moveCalls += reference to before
+        val reordered = detail.items.filterNot { it.reference == reference }.map { it.toCatalogItem() }.toMutableList()
+        reordered.add(before?.let { target -> reordered.indexOfFirst { it.reference == target } }.takeIf { it != null && it >= 0 } ?: reordered.size, source)
+        put(id, detail.collection.name, reordered)
     }
     fun put(id: CollectionId, name: String, media: List<MediaCatalogItem> = emptyList()) {
         val previous = details[id]?.value?.collection

@@ -50,6 +50,7 @@ interface MediaCollectionRepository {
     suspend fun delete(id: CollectionId)
     suspend fun addMedia(id: CollectionId, media: MediaCatalogItem)
     suspend fun removeMedia(id: CollectionId, reference: MediaReference)
+    suspend fun moveMedia(id: CollectionId, reference: MediaReference, before: MediaReference?)
 }
 
 class SqlDelightMediaCollectionRepository(
@@ -96,9 +97,10 @@ class SqlDelightMediaCollectionRepository(
         if (readMemberships(media.reference).contains(id)) return
         database.transaction {
             val now = nowEpochMillis()
+            val position = database.playerDatabaseQueries.selectNextCollectionPosition(id.value).executeAsOne()
             database.playerDatabaseQueries.insertCollectionMedia(
                 id.value, media.reference.provider.value, media.reference.externalId, media.title,
-                media.thumbnailUrl, media.authorTitle, media.durationMs, now
+                media.thumbnailUrl, media.authorTitle, media.durationMs, now, position
             )
             database.playerDatabaseQueries.updateCollectionTimestamp(now, id.value)
         }
@@ -110,6 +112,37 @@ class SqlDelightMediaCollectionRepository(
         if (!readMemberships(reference).contains(id)) return
         database.transaction {
             database.playerDatabaseQueries.deleteCollectionMedia(id.value, reference.provider.value, reference.externalId)
+            readDetail(id)!!.items.forEachIndexed { position, media ->
+                database.playerDatabaseQueries.updateCollectionMediaPosition(
+                    position.toLong(), id.value, media.reference.provider.value, media.reference.externalId
+                )
+            }
+            database.playerDatabaseQueries.updateCollectionTimestamp(nowEpochMillis(), id.value)
+        }
+        refresh()
+    }
+
+    override suspend fun moveMedia(id: CollectionId, reference: MediaReference, before: MediaReference?) {
+        requireCollection(id)
+        val current = readDetail(id)!!.items
+        val sourceIndex = current.indexOfFirst { it.reference == reference }
+        require(sourceIndex >= 0) { "Media is not in collection ${id.value}" }
+        if (before == reference) return
+        val withoutSource = current.filterNot { it.reference == reference }
+        val targetIndex = when (before) {
+            null -> withoutSource.size
+            else -> withoutSource.indexOfFirst { it.reference == before }.also {
+                require(it >= 0) { "Target media is not in collection ${id.value}" }
+            }
+        }
+        val reordered = withoutSource.toMutableList().apply { add(targetIndex, current[sourceIndex]) }
+        if (reordered == current) return
+        database.transaction {
+            reordered.forEachIndexed { position, media ->
+                database.playerDatabaseQueries.updateCollectionMediaPosition(
+                    position.toLong(), id.value, media.reference.provider.value, media.reference.externalId
+                )
+            }
             database.playerDatabaseQueries.updateCollectionTimestamp(nowEpochMillis(), id.value)
         }
         refresh()

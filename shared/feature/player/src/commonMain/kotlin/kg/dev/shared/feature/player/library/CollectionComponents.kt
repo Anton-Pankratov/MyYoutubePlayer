@@ -89,6 +89,8 @@ sealed interface CollectionDetailUiState {
 interface CollectionDetailComponent {
     val state: StateFlow<CollectionDetailUiState>
     fun remove(media: CollectionMedia)
+    fun moveUp(reference: kg.dev.shared.core.common.media.MediaReference)
+    fun moveDown(reference: kg.dev.shared.core.common.media.MediaReference)
     fun open(media: CollectionMedia)
 }
 
@@ -111,5 +113,20 @@ class DefaultCollectionDetailComponent(
         } }
     }
     override fun remove(media: CollectionMedia) { scope.launch { runCatching { repository.removeMedia(id, media.reference) }.onFailure { mutableState.value = CollectionDetailUiState.Error } } }
+    override fun moveUp(reference: kg.dev.shared.core.common.media.MediaReference) {
+        val items = (mutableState.value as? CollectionDetailUiState.Content)?.detail?.items ?: return
+        val index = items.indexOfFirst { it.reference == reference }
+        if (index <= 0) return
+        move(reference, items[index - 1].reference)
+    }
+    override fun moveDown(reference: kg.dev.shared.core.common.media.MediaReference) {
+        val items = (mutableState.value as? CollectionDetailUiState.Content)?.detail?.items ?: return
+        val index = items.indexOfFirst { it.reference == reference }
+        if (index < 0 || index == items.lastIndex) return
+        move(reference, items.getOrNull(index + 2)?.reference)
+    }
+    private fun move(reference: kg.dev.shared.core.common.media.MediaReference, before: kg.dev.shared.core.common.media.MediaReference?) {
+        scope.launch { runCatching { repository.moveMedia(id, reference, before) }.onFailure { mutableState.value = CollectionDetailUiState.Error } }
+    }
     override fun open(media: CollectionMedia) = onMediaSelected(media.toCatalogItem())
 }

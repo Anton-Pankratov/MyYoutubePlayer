@@ -151,8 +151,11 @@ private fun CollectionDetailContent(component: CollectionDetailComponent, back: 
             is CollectionDetailUiState.Content -> {
                 Text(value.detail.collection.name)
                 if (value.detail.items.isEmpty()) EmptyState("Collection", "No items yet")
-                value.detail.items.forEach { media -> Row(Modifier.fillMaxWidth().clickable { component.open(media) }.padding(MediaSpacing.sm)) {
-                    Text(media.title, Modifier.weight(1f)); OutlinedButton(onClick = { component.remove(media) }) { Text("Remove") }
+                value.detail.items.forEachIndexed { index, media -> Row(Modifier.fillMaxWidth().clickable { component.open(media) }.padding(MediaSpacing.sm)) {
+                    Text(media.title, Modifier.weight(1f))
+                    if (index > 0) OutlinedButton(onClick = { component.moveUp(media.reference) }) { Text("Move up") }
+                    if (index < value.detail.items.lastIndex) OutlinedButton(onClick = { component.moveDown(media.reference) }) { Text("Move down") }
+                    OutlinedButton(onClick = { component.remove(media) }) { Text("Remove") }
                 } }
             }
         }
