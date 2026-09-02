@@ -55,6 +55,8 @@ import kg.dev.shared.feature.search.presentation.SearchComponent
 import kg.dev.shared.feature.search.ui.SearchContent
 import kg.dev.shared.feature.player.library.LibraryComponent
 import kg.dev.shared.feature.player.library.LibraryContent
+import kg.dev.shared.feature.player.library.LibraryHubComponent
+import kg.dev.shared.feature.player.library.LibraryHubContent
 import kg.dev.shared.feature.player.library.SavedMedia
 
 private data class Destination(
@@ -65,7 +67,7 @@ private data class Destination(
 )
 
 typealias HomeComponentFactory = (ComponentContext, (HomeMediaItemUiModel) -> Unit, (() -> Unit)?) -> HomeComponent
-typealias LibraryComponentFactory = (ComponentContext, (SavedMedia) -> Unit) -> LibraryComponent
+typealias LibraryComponentFactory = (ComponentContext, (MediaCatalogItem) -> Unit) -> LibraryHubComponent
 
 @Composable
 fun SharedAppContent(
@@ -202,10 +204,10 @@ private fun ActiveContent(
         is RootComponent.Child.Player -> playerContent(child.component, modifier)
         is RootComponent.Child.Profile -> {
             val library = libraryComponentFactory?.let { factory ->
-                remember(child.component) { factory(child.component as ComponentContext, rootComponent::openSavedMedia) }
+                remember(child.component) { factory(child.component as ComponentContext, rootComponent::openMedia) }
             }
             if (library == null) EmptyState("Library is not available", "Saved media storage is not available on this platform yet.", modifier)
-            else LibraryContent(library, modifier)
+            else LibraryHubContent(library, modifier)
         }
     }
 }
@@ -221,11 +223,6 @@ internal fun <SearchComponent : Any> RootComponent<SearchComponent>.openHomeItem
         item.startPositionMs
     )
 }
-
-internal fun <SearchComponent : Any> RootComponent<SearchComponent>.openSavedMedia(item: SavedMedia) {
-    openMedia(item.toCatalogItem())
-}
-
 
 @Composable
 private fun PlayerBackButton(onClick: () -> Unit) {

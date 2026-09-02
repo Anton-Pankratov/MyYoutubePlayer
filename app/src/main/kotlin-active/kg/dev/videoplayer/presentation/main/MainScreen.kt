@@ -14,7 +14,8 @@ import kg.dev.shared.feature.home.presentation.HomeMediaAvailability
 import kg.dev.shared.feature.history.domain.HistoryRepository
 import kg.dev.shared.feature.player.presentation.PlayerComponent
 import kg.dev.shared.feature.player.ui.AndroidPlayerContent
-import kg.dev.shared.feature.player.library.DefaultLibraryComponent
+import kg.dev.shared.feature.player.library.DefaultLibraryHubComponent
+import kg.dev.shared.feature.player.library.MediaCollectionRepository
 import kg.dev.shared.feature.player.library.SavedMediaRepository
 import kg.dev.shared.feature.player.library.LibraryViewPreferencesRepository
 import kg.dev.shared.feature.search.presentation.SearchComponent
@@ -29,6 +30,7 @@ fun MainScreen(rootComponent: RootComponent<SearchComponent>) {
     val localMediaImporter = koinInject<AndroidLocalMediaImporter>()
     val savedMediaRepository = koinInject<SavedMediaRepository>()
     val libraryViewPreferences = koinInject<LibraryViewPreferencesRepository>()
+    val mediaCollectionRepository = koinInject<MediaCollectionRepository>()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val localVideoPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -52,7 +54,7 @@ fun MainScreen(rootComponent: RootComponent<SearchComponent>) {
             )
         },
         libraryComponentFactory = { componentContext, selected ->
-            DefaultLibraryComponent(componentContext, savedMediaRepository, libraryViewPreferences, selected)
+            DefaultLibraryHubComponent(componentContext, savedMediaRepository, libraryViewPreferences, mediaCollectionRepository, selected)
         },
         onImportLocalMedia = { localVideoPicker.launch(arrayOf("video/*")) }
     ) { navigationComponent, modifier ->

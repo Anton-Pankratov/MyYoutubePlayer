@@ -1,0 +1,25 @@
+CREATE TABLE mediaCollection (
+    id TEXT NOT NULL PRIMARY KEY,
+    name TEXT NOT NULL,
+    createdAtEpochMs INTEGER NOT NULL,
+    updatedAtEpochMs INTEGER NOT NULL
+);
+
+CREATE TABLE collectionMedia (
+    collectionId TEXT NOT NULL,
+    providerId TEXT NOT NULL,
+    externalId TEXT NOT NULL,
+    title TEXT NOT NULL,
+    thumbnailUrl TEXT,
+    authorTitle TEXT,
+    durationMs INTEGER,
+    addedAtEpochMs INTEGER NOT NULL,
+    PRIMARY KEY(collectionId, providerId, externalId),
+    FOREIGN KEY(collectionId) REFERENCES mediaCollection(id) ON DELETE CASCADE
+);
+
+CREATE INDEX collectionMedia_by_collection_added
+ON collectionMedia(collectionId, addedAtEpochMs DESC, providerId, externalId);
+
+CREATE INDEX mediaCollection_by_updated
+ON mediaCollection(updatedAtEpochMs DESC, name, id);

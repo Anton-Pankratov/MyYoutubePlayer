@@ -13,6 +13,8 @@ import kg.dev.shared.feature.player.library.AndroidLibraryViewPreferencesStorage
 import kg.dev.shared.feature.player.library.LibraryViewPreferencesRepository
 import kg.dev.shared.feature.player.library.LibraryViewPreferencesStorage
 import kg.dev.shared.feature.player.library.PersistentLibraryViewPreferencesRepository
+import kg.dev.shared.feature.player.library.MediaCollectionRepository
+import kg.dev.shared.feature.player.library.SqlDelightMediaCollectionRepository
 import kg.dev.videoplayer.BuildConfig
 import org.koin.android.ext.koin.androidContext
 import org.koin.dsl.module
@@ -41,4 +43,5 @@ val androidPlatformModule = module {
     }
     single<LibraryViewPreferencesStorage> { AndroidLibraryViewPreferencesStorage(androidContext()) }
     single<LibraryViewPreferencesRepository> { PersistentLibraryViewPreferencesRepository(get()) }
+    single<MediaCollectionRepository> { SqlDelightMediaCollectionRepository(get()) }
 }

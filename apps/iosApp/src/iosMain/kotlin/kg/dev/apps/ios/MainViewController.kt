@@ -15,7 +15,8 @@ import kg.dev.shared.feature.search.presentation.SearchComponent
 import kg.dev.shared.appshell.SharedAppContent
 import kg.dev.shared.feature.history.domain.HistoryRepository
 import kg.dev.shared.feature.player.library.SavedMediaRepository
-import kg.dev.shared.feature.player.library.DefaultLibraryComponent
+import kg.dev.shared.feature.player.library.DefaultLibraryHubComponent
+import kg.dev.shared.feature.player.library.MediaCollectionRepository
 import kg.dev.shared.feature.player.library.IosLibraryViewPreferencesStorage
 import kg.dev.shared.feature.player.library.LibraryViewPreferencesStorage
 import kg.dev.shared.feature.home.presentation.DefaultHomeComponent
@@ -87,7 +88,7 @@ fun MainViewController(youtubeApiKey: String): UIViewController {
                     )
                 },
                 libraryComponentFactory = { context, selected ->
-                    DefaultLibraryComponent(context, koin.get<SavedMediaRepository>(), koin.get(), selected)
+                    DefaultLibraryHubComponent(context, koin.get<SavedMediaRepository>(), koin.get(), koin.get<MediaCollectionRepository>(), selected)
                 },
                 playerContent = { component, modifier ->
                     IosPlayerContent(component as DefaultPlayerComponent, modifier)

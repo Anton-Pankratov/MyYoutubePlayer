@@ -33,6 +33,32 @@ CREATE TABLE savedMedia (
     PRIMARY KEY(providerId, externalId)
 );
 
+CREATE TABLE mediaCollection (
+    id TEXT NOT NULL PRIMARY KEY,
+    name TEXT NOT NULL,
+    createdAtEpochMs INTEGER NOT NULL,
+    updatedAtEpochMs INTEGER NOT NULL
+);
+
+CREATE TABLE collectionMedia (
+    collectionId TEXT NOT NULL,
+    providerId TEXT NOT NULL,
+    externalId TEXT NOT NULL,
+    title TEXT NOT NULL,
+    thumbnailUrl TEXT,
+    authorTitle TEXT,
+    durationMs INTEGER,
+    addedAtEpochMs INTEGER NOT NULL,
+    PRIMARY KEY(collectionId, providerId, externalId),
+    FOREIGN KEY(collectionId) REFERENCES mediaCollection(id) ON DELETE CASCADE
+);
+
+CREATE INDEX collectionMedia_by_collection_added
+ON collectionMedia(collectionId, addedAtEpochMs DESC, providerId, externalId);
+
+CREATE INDEX mediaCollection_by_updated
+ON mediaCollection(updatedAtEpochMs DESC, name, id);
+
 upsertDirectMedia:
 INSERT OR REPLACE INTO directMediaSource(externalId, title, uri, mimeType, thumbnailUrl, authorTitle, durationMs)
 VALUES (?, ?, ?, ?, ?, ?, ?);
@@ -76,3 +102,47 @@ INSERT OR REPLACE INTO savedMedia(
 
 deleteSavedMedia:
 DELETE FROM savedMedia WHERE providerId = ? AND externalId = ?;
+
+selectCollections:
+SELECT mediaCollection.*, COUNT(collectionMedia.externalId) AS itemCount
+FROM mediaCollection
+LEFT JOIN collectionMedia ON collectionMedia.collectionId = mediaCollection.id
+GROUP BY mediaCollection.id
+ORDER BY mediaCollection.updatedAtEpochMs DESC, lower(mediaCollection.name) ASC, mediaCollection.id ASC;
+
+selectCollection:
+SELECT * FROM mediaCollection WHERE id = ?;
+
+selectCollectionItems:
+SELECT * FROM collectionMedia
+WHERE collectionId = ?
+ORDER BY addedAtEpochMs DESC, providerId ASC, externalId ASC;
+
+selectCollectionIdsContaining:
+SELECT collectionId FROM collectionMedia
+WHERE providerId = ? AND externalId = ?;
+
+insertCollection:
+INSERT INTO mediaCollection(id, name, createdAtEpochMs, updatedAtEpochMs)
+VALUES (?, ?, ?, ?);
+
+updateCollectionName:
+UPDATE mediaCollection SET name = ?, updatedAtEpochMs = ? WHERE id = ?;
+
+updateCollectionTimestamp:
+UPDATE mediaCollection SET updatedAtEpochMs = ? WHERE id = ?;
+
+deleteCollectionMemberships:
+DELETE FROM collectionMedia WHERE collectionId = ?;
+
+deleteCollection:
+DELETE FROM mediaCollection WHERE id = ?;
+
+insertCollectionMedia:
+INSERT OR IGNORE INTO collectionMedia(
+    collectionId, providerId, externalId, title, thumbnailUrl, authorTitle, durationMs, addedAtEpochMs
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+
+deleteCollectionMedia:
+DELETE FROM collectionMedia
+WHERE collectionId = ? AND providerId = ? AND externalId = ?;

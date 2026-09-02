@@ -20,7 +20,7 @@ import kg.dev.shared.core.ui.design.MediaTheme
 import kg.dev.shared.core.ui.design.ErrorState
 
 @Composable
-fun LibraryContent(component: LibraryComponent, modifier: Modifier = Modifier) {
+fun LibraryContent(component: LibraryComponent, modifier: Modifier = Modifier, onAddToCollection: ((SavedMedia) -> Unit)? = null) {
     val state by component.state.collectAsState()
     when (state) {
         LibraryUiState.Loading -> androidx.compose.foundation.layout.Box(modifier.fillMaxSize(), contentAlignment = androidx.compose.ui.Alignment.Center) {
@@ -40,8 +40,8 @@ fun LibraryContent(component: LibraryComponent, modifier: Modifier = Modifier) {
                 if (!content.hasAnySavedMedia) EmptyState("Library", "Nothing saved yet")
                 else if (content.favorites.isEmpty() && content.watchLater.isEmpty()) EmptyState("No matches", "Try another search or filter")
                 else {
-                    if (content.showFavorites) SavedSection("Favorites", content.favorites, component::open, component::removeFavorite, "No favorites yet")
-                    if (content.showWatchLater) SavedSection("Watch Later", content.watchLater, component::open, component::removeWatchLater, "Nothing in Watch Later")
+                    if (content.showFavorites) SavedSection("Favorites", content.favorites, component::open, component::removeFavorite, "No favorites yet", onAddToCollection)
+                    if (content.showWatchLater) SavedSection("Watch Later", content.watchLater, component::open, component::removeWatchLater, "Nothing in Watch Later", onAddToCollection)
                 }
             }
         }
@@ -61,7 +61,8 @@ private fun SavedSection(
     items: List<SavedMedia>,
     open: (SavedMedia) -> Unit,
     remove: (SavedMedia) -> Unit,
-    empty: String
+    empty: String,
+    onAddToCollection: ((SavedMedia) -> Unit)?
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(MediaSpacing.sm)) {
         Text(title, style = MediaTheme.typography.screenTitle, color = MediaTheme.colors.textPrimary)
@@ -76,6 +77,7 @@ private fun SavedSection(
                     item.authorTitle?.let { Text(it, style = MediaTheme.typography.metadata, color = MediaTheme.colors.textSecondary) }
                 }
                 OutlinedButton(onClick = { remove(item) }) { Text("Remove") }
+                if (onAddToCollection != null) OutlinedButton(onClick = { onAddToCollection(item) }) { Text("Add to collection") }
             }
         }
     }
