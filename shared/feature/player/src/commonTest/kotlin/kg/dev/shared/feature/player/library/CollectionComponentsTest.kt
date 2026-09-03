@@ -188,6 +188,27 @@ class CollectionComponentsTest {
         assertEquals(writes, repository.moveCalls.size)
     }
 
+    @Test fun detailMoveBeforeForwardsOneProviderQualifiedSemanticMove() = runTest {
+        val repository = FakeCollections(); val id = CollectionId("drag")
+        val youtube = item("youtube", "same", "YouTube")
+        val direct = item("direct", "same", "Direct")
+        repository.put(id, "Drag", listOf(youtube, direct))
+        val lifecycle = LifecycleRegistry().also { it.onCreate() }
+        val detail = DefaultCollectionDetailComponent(DefaultComponentContext(lifecycle), id, repository, {}, {}, StandardTestDispatcher(testScheduler))
+        advanceUntilIdle()
+
+        detail.moveBefore(direct.reference, youtube.reference)
+        advanceUntilIdle()
+
+        assertEquals(
+            listOf(Pair<MediaReference, MediaReference?>(direct.reference, youtube.reference)),
+            repository.moveCalls,
+        )
+        assertEquals(listOf(direct.reference, youtube.reference),
+            assertIs<CollectionDetailUiState.Content>(detail.state.value).detail.items.map { it.reference })
+        lifecycle.onDestroy()
+    }
+
     private fun listComponent(repository: FakeCollections, dispatcher: TestDispatcher): DefaultCollectionListComponent {
         val lifecycle = LifecycleRegistry().also { it.onCreate() }
         return DefaultCollectionListComponent(DefaultComponentContext(lifecycle), repository, {}, dispatcher)
