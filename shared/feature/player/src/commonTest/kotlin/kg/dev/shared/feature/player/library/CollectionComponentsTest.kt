@@ -209,6 +209,31 @@ class CollectionComponentsTest {
         lifecycle.onDestroy()
     }
 
+    @Test fun detailPlayAllUsesCurrentAuthoritativeOrderWithoutOpeningItems() = runTest {
+        val repository = FakeCollections(); val id = CollectionId("play-all")
+        val a = item("youtube", "a", "A"); val b = item("direct", "b", "B")
+        repository.put(id, "Queue", listOf(a, b))
+        val played = mutableListOf<List<MediaCatalogItem>>()
+        val lifecycle = LifecycleRegistry().also { it.onCreate() }
+        val detail = DefaultCollectionDetailComponent(DefaultComponentContext(lifecycle), id, repository, {}, {}, StandardTestDispatcher(testScheduler), played::add)
+        advanceUntilIdle(); detail.playAll()
+        assertEquals(listOf(listOf(a, b)), played)
+        lifecycle.onDestroy()
+    }
+
+    @Test fun emptyCollectionPlayAllDoesNotEmitSnapshot() = runTest {
+        val repository = FakeCollections(); val emitted = mutableListOf<List<MediaCatalogItem>>(); val lifecycle = LifecycleRegistry().also { it.onCreate() }
+        val detail = DefaultCollectionDetailComponent(DefaultComponentContext(lifecycle), CollectionId("empty"), repository, {}, {}, StandardTestDispatcher(testScheduler), emitted::add)
+        repository.put(CollectionId("empty"), "Empty"); advanceUntilIdle(); detail.playAll()
+        assertTrue(emitted.isEmpty()); lifecycle.onDestroy()
+    }
+
+    @Test fun oneItemCollectionPlayAllEmitsExactlyOneItem() = runTest {
+        val repository = FakeCollections(); val id=CollectionId("one"); val source=item("youtube","same","One","thumb","Author",7); val emitted=mutableListOf<List<MediaCatalogItem>>(); val lifecycle=LifecycleRegistry().also { it.onCreate() }
+        repository.put(id,"One",listOf(source)); val detail=DefaultCollectionDetailComponent(DefaultComponentContext(lifecycle),id,repository,{}, {},StandardTestDispatcher(testScheduler),emitted::add)
+        advanceUntilIdle();detail.playAll();assertEquals(listOf(source),emitted.single());lifecycle.onDestroy()
+    }
+
     private fun listComponent(repository: FakeCollections, dispatcher: TestDispatcher): DefaultCollectionListComponent {
         val lifecycle = LifecycleRegistry().also { it.onCreate() }
         return DefaultCollectionListComponent(DefaultComponentContext(lifecycle), repository, {}, dispatcher)

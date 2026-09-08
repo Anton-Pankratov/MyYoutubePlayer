@@ -9,6 +9,7 @@ import kg.dev.shared.feature.history.domain.WatchedVideo
 import kg.dev.shared.core.common.media.MediaCatalogItem
 import kg.dev.shared.core.common.media.MediaProviders
 import kg.dev.shared.core.common.media.MediaReference
+import kg.dev.shared.core.ui.navigation.PlaybackQueueState
 import kg.dev.shared.feature.player.PlayableMedia
 import kg.dev.shared.feature.player.ProviderMediaSurface
 import kg.dev.shared.feature.player.ProviderPlaybackAdapter
@@ -185,6 +186,81 @@ class PlayerComponentTest {
         assertEquals(1, controller.resumeCalls)
         lifecycle.onDestroy()
         advanceUntilIdle()
+    }
+
+    @Test
+    fun completedPlaybackPersistsHistoryBeforeQueueNotificationExactlyOnce() = runTest {
+        val lifecycle = LifecycleRegistry().also { it.onCreate() }
+        val events = mutableListOf<String>()
+        val history = RecordingHistoryRepository { events += "history-save" }
+        var completionCalls = 0
+        val component = DefaultPlayerComponent(
+            DefaultComponentContext(lifecycle), media(), FakeController(), history,
+            nowEpochMillis = { 99 },
+            onNaturalCompletion = { events += "queue-completion"; completionCalls++ },
+            coroutineContext = StandardTestDispatcher(testScheduler)
+        )
+        val controller = component.videoPlayerController as FakeController
+
+        controller.publish(PlayerState(media(), PlaybackState.Completed, positionMs = 99_000, durationMs = 100_000))
+        advanceUntilIdle()
+        controller.publish(PlayerState(media(), PlaybackState.Completed, positionMs = 98_000, durationMs = 100_000))
+        advanceUntilIdle()
+
+        assertEquals(listOf("history-save", "queue-completion"), events)
+        assertEquals(1, completionCalls)
+        lifecycle.onDestroy()
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun queueControlsReflectActiveQueueAndDelegateCallbacks() = runTest {
+        val items = listOf(media().catalogItem, item("youtube", "middle"), item("direct", "last"))
+        val queue = MutableStateFlow(
+            PlaybackQueueState(items = items, currentIndex = 0)
+        )
+        var next = 0
+        var previous = 0
+        fun componentFor(index: Int): DefaultPlayerComponent = DefaultPlayerComponent(
+            DefaultComponentContext(LifecycleRegistry().also { it.onCreate() }), playable(items[index]), FakeController(), RecordingHistoryRepository(),
+            nowEpochMillis = { 99 }, playbackQueue = queue, onQueueNext = { next++ }, onQueuePrevious = { previous++ },
+            coroutineContext = StandardTestDispatcher(testScheduler)
+        )
+        val component = componentFor(0)
+        advanceUntilIdle()
+        assertEquals(QueueControls(0, 3, hasPrevious = false, hasNext = true), component.queueControls.value)
+        queue.value = queue.value.copy(currentIndex = 1)
+        val middle = componentFor(1)
+        advanceUntilIdle()
+        assertEquals(QueueControls(1, 3, hasPrevious = true, hasNext = true), middle.queueControls.value)
+        queue.value = queue.value.copy(currentIndex = 2)
+        val last = componentFor(2)
+        advanceUntilIdle()
+        assertEquals(QueueControls(2, 3, hasPrevious = true, hasNext = false), last.queueControls.value)
+        middle.previousQueueItem(); middle.nextQueueItem()
+        assertEquals(1, previous); assertEquals(1, next)
+    }
+
+    @Test
+    fun queueTransitionLifecyclePersistsActualProgressWithoutSyntheticCompletion() = runTest {
+        val lifecycle = LifecycleRegistry().also { it.onCreate() }
+        val controller = FakeController()
+        val history = RecordingHistoryRepository()
+        var completions = 0
+        DefaultPlayerComponent(
+            DefaultComponentContext(lifecycle), media(), controller, history,
+            nowEpochMillis = { 99 }, onNaturalCompletion = { completions++ },
+            coroutineContext = StandardTestDispatcher(testScheduler)
+        )
+
+        controller.publish(PlayerState(media(), PlaybackState.Playing, positionMs = 42_000, durationMs = 100_000))
+        advanceUntilIdle()
+        lifecycle.onDestroy()
+        advanceUntilIdle()
+
+        assertEquals(42_000, history.saved.last().positionMs)
+        assertEquals(100_000, history.saved.last().durationMs)
+        assertEquals(0, completions)
     }
 
     @Test
@@ -421,6 +497,16 @@ class PlayerComponentTest {
         else PlaybackSource.Direct("https://example.test/video.mp4")
     )
 
+    private fun item(provider: String, externalId: String) = MediaCatalogItem(
+        MediaReference(kg.dev.shared.core.common.media.MediaProviderId(provider), externalId), "Media $externalId"
+    )
+
+    private fun playable(item: MediaCatalogItem) = PlayableMedia(
+        item,
+        if (item.reference.provider == MediaProviders.Direct) PlaybackSource.Direct("https://example.test/${item.reference.externalId}.mp4")
+        else PlaybackSource.ProviderControlled(item.reference)
+    )
+
     private class FakeController : VideoPlayerController {
         private val mutableState = MutableStateFlow(PlayerState())
         override val state: StateFlow<PlayerState> = mutableState
@@ -455,9 +541,9 @@ class PlayerComponentTest {
         fun publish(state: PlayerState) { mutableState.value = state }
     }
 
-    private class RecordingHistoryRepository : HistoryRepository {
+    private class RecordingHistoryRepository(private val onSave: () -> Unit = {}) : HistoryRepository {
         val saved = mutableListOf<WatchedVideo>()
-        override suspend fun save(video: WatchedVideo) { saved += video }
+        override suspend fun save(video: WatchedVideo) { saved += video; onSave() }
         override suspend fun recent(limit: Long): List<WatchedVideo> = saved
         override suspend fun delete(reference: MediaReference) = Unit
     }

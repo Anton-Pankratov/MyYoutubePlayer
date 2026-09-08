@@ -5,6 +5,14 @@ import kg.dev.shared.feature.player.ProviderPlaybackSession
 import kg.dev.shared.feature.player.PlaybackState
 import kg.dev.shared.feature.player.PlayerError
 import kotlinx.coroutines.flow.StateFlow
+import kg.dev.shared.core.ui.navigation.PlaybackQueueState
+
+data class QueueControls(
+    val currentIndex: Int,
+    val totalCount: Int,
+    val hasPrevious: Boolean,
+    val hasNext: Boolean,
+)
 
 data class PlayerUiState(
     val media: PlayableMedia? = null,
@@ -24,10 +32,13 @@ data class PlayerUiState(
 interface PlayerComponent {
     val state: StateFlow<PlayerUiState>
     val providerPlaybackSession: ProviderPlaybackSession?
+    val queueControls: StateFlow<QueueControls?>
     fun play()
     fun pause()
     fun seekTo(positionMs: Long)
     fun retry()
     fun setFavorite(enabled: Boolean)
     fun setWatchLater(enabled: Boolean)
+    fun nextQueueItem()
+    fun previousQueueItem()
 }

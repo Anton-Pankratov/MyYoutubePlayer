@@ -89,6 +89,7 @@ sealed interface CollectionDetailUiState {
 interface CollectionDetailComponent {
     val state: StateFlow<CollectionDetailUiState>
     fun remove(media: CollectionMedia)
+    fun playAll()
     fun moveBefore(reference: kg.dev.shared.core.common.media.MediaReference, before: kg.dev.shared.core.common.media.MediaReference?)
     fun moveUp(reference: kg.dev.shared.core.common.media.MediaReference)
     fun moveDown(reference: kg.dev.shared.core.common.media.MediaReference)
@@ -101,7 +102,8 @@ class DefaultCollectionDetailComponent(
     private val repository: MediaCollectionRepository,
     private val onMediaSelected: (MediaCatalogItem) -> Unit,
     private val onDeleted: () -> Unit,
-    coroutineContext: kotlin.coroutines.CoroutineContext = kotlinx.coroutines.Dispatchers.Default
+    coroutineContext: kotlin.coroutines.CoroutineContext = kotlinx.coroutines.Dispatchers.Default,
+    private val onPlayAll: (List<MediaCatalogItem>) -> Unit = {},
 ) : CollectionDetailComponent, ComponentContext by componentContext {
     private val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + coroutineContext)
     private val mutableState = MutableStateFlow<CollectionDetailUiState>(CollectionDetailUiState.Loading)
@@ -115,6 +117,10 @@ class DefaultCollectionDetailComponent(
         } }
     }
     override fun remove(media: CollectionMedia) { scope.launch { runCatching { repository.removeMedia(id, media.reference) }.onFailure { mutableState.value = CollectionDetailUiState.Error } } }
+    override fun playAll() {
+        val items = (mutableState.value as? CollectionDetailUiState.Content)?.detail?.items.orEmpty()
+        if (items.isNotEmpty()) onPlayAll(items.map(CollectionMedia::toCatalogItem))
+    }
     override fun moveUp(reference: kg.dev.shared.core.common.media.MediaReference) {
         val items = (mutableState.value as? CollectionDetailUiState.Content)?.detail?.items ?: return
         val index = items.indexOfFirst { it.reference == reference }

@@ -162,6 +162,10 @@ private fun CollectionDetailContent(component: CollectionDetailComponent, back: 
             CollectionDetailUiState.Error -> EmptyState("Collection unavailable", "Try again")
             is CollectionDetailUiState.Content -> {
                 Text(value.detail.collection.name)
+                androidx.compose.material3.OutlinedButton(
+                    onClick = component::playAll,
+                    enabled = value.detail.items.isNotEmpty(),
+                ) { Text("Play All") }
                 if (value.detail.items.isEmpty()) EmptyState("Collection", "No items yet")
                 val authoritativeItems = value.detail.items
                 val authoritativeSequence = authoritativeItems.map { it.reference }

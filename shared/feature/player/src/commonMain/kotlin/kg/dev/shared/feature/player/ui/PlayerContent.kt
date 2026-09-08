@@ -66,6 +66,7 @@ fun PlayerContent(
     providerAdapters: ProviderPlaybackAdapterRegistry = ProviderPlaybackAdapterRegistry.Empty
 ) {
     val state by component.state.collectAsState()
+    val queueControls by component.queueControls.collectAsState()
     PlayerContent(
         state = state,
         onPlay = component::play,
@@ -74,6 +75,9 @@ fun PlayerContent(
         onRetry = component::retry,
         onSetFavorite = component::setFavorite,
         onSetWatchLater = component::setWatchLater,
+        queueControls = queueControls,
+        onQueuePrevious = component::previousQueueItem,
+        onQueueNext = component::nextQueueItem,
         modifier = modifier,
         mediaSurface = mediaSurface,
         providerAdapters = providerAdapters,
@@ -129,6 +133,9 @@ fun PlayerContent(
     onRetry: () -> Unit,
     onSetFavorite: (Boolean) -> Unit = {},
     onSetWatchLater: (Boolean) -> Unit = {},
+    queueControls: kg.dev.shared.feature.player.presentation.QueueControls? = null,
+    onQueuePrevious: () -> Unit = {},
+    onQueueNext: () -> Unit = {},
     modifier: Modifier = Modifier,
     mediaSurface: @Composable ((Modifier) -> Unit)? = null,
     providerAdapters: ProviderPlaybackAdapterRegistry = ProviderPlaybackAdapterRegistry.Empty,
@@ -201,6 +208,13 @@ fun PlayerContent(
                         onSeek = onSeek,
                         canSeek = canUseNativePlayer || providerSession?.capabilities?.canSeek == true
                     )
+                }
+                queueControls?.let { queue ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(MediaSpacing.sm)) {
+                        androidx.compose.material3.OutlinedButton(onClick = onQueuePrevious, enabled = queue.hasPrevious) { Text("Previous") }
+                        Text("${queue.currentIndex + 1} of ${queue.totalCount}")
+                        androidx.compose.material3.OutlinedButton(onClick = onQueueNext, enabled = queue.hasNext) { Text("Next") }
+                    }
                 }
 
                 Row(horizontalArrangement = Arrangement.spacedBy(MediaSpacing.sm)) {

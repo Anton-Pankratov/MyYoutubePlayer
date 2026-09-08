@@ -67,7 +67,7 @@ private data class Destination(
 )
 
 typealias HomeComponentFactory = (ComponentContext, (HomeMediaItemUiModel) -> Unit, (() -> Unit)?) -> HomeComponent
-typealias LibraryComponentFactory = (ComponentContext, (MediaCatalogItem) -> Unit) -> LibraryHubComponent
+typealias LibraryComponentFactory = (ComponentContext, (MediaCatalogItem) -> Unit, (List<MediaCatalogItem>) -> Unit) -> LibraryHubComponent
 
 @Composable
 fun SharedAppContent(
@@ -204,7 +204,7 @@ private fun ActiveContent(
         is RootComponent.Child.Player -> playerContent(child.component, modifier)
         is RootComponent.Child.Profile -> {
             val library = libraryComponentFactory?.let { factory ->
-                remember(child.component) { factory(child.component as ComponentContext, rootComponent::openMedia) }
+                remember(child.component) { factory(child.component as ComponentContext, rootComponent::openMedia, rootComponent::playAll) }
             }
             if (library == null) EmptyState("Library is not available", "Saved media storage is not available on this platform yet.", modifier)
             else LibraryHubContent(library, modifier)

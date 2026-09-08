@@ -27,7 +27,8 @@ class DefaultLibraryHubComponent(
     viewPreferences: LibraryViewPreferencesRepository,
     private val collectionRepository: MediaCollectionRepository,
     private val onMediaSelected: (MediaCatalogItem) -> Unit,
-    private val coroutineContext: kotlin.coroutines.CoroutineContext = kotlinx.coroutines.Dispatchers.Default
+    private val coroutineContext: kotlin.coroutines.CoroutineContext = kotlinx.coroutines.Dispatchers.Default,
+    private val onPlayAll: (List<MediaCatalogItem>) -> Unit = {},
 ) : LibraryHubComponent, ComponentContext by componentContext {
     private val mutableDestination = MutableStateFlow<LibraryHubDestination>(LibraryHubDestination.Saved)
     override val destination: StateFlow<LibraryHubDestination> = mutableDestination
@@ -36,7 +37,7 @@ class DefaultLibraryHubComponent(
     private val details = mutableMapOf<CollectionId, CollectionDetailComponent>()
 
     override fun detail(id: CollectionId): CollectionDetailComponent = details.getOrPut(id) {
-        DefaultCollectionDetailComponent(componentContext, id, collectionRepository, onMediaSelected, ::showCollections, coroutineContext)
+        DefaultCollectionDetailComponent(componentContext, id, collectionRepository, onMediaSelected, ::showCollections, coroutineContext, onPlayAll)
     }
     override fun showSaved() { mutableDestination.value = LibraryHubDestination.Saved }
     override fun showCollections() { mutableDestination.value = LibraryHubDestination.Collections }

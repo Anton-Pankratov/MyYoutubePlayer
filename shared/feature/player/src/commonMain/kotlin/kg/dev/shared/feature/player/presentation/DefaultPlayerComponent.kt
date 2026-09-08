@@ -20,6 +20,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kg.dev.shared.core.ui.navigation.PlaybackQueueState
 import kotlinx.coroutines.launch
 import kotlin.coroutines.CoroutineContext
 
@@ -32,12 +33,18 @@ class DefaultPlayerComponent(
     private val nowEpochMillis: () -> Long,
     val providerPlaybackAdapters: ProviderPlaybackAdapterRegistry = ProviderPlaybackAdapterRegistry.Empty,
     private val savedMediaRepository: SavedMediaRepository? = null,
+    private val playbackQueue: StateFlow<PlaybackQueueState>? = null,
+    private val onQueueNext: () -> Unit = {},
+    private val onQueuePrevious: () -> Unit = {},
+    private val onNaturalCompletion: suspend (kg.dev.shared.core.common.media.MediaReference) -> Unit = {},
     coroutineContext: CoroutineContext = Dispatchers.Default
 ) : PlayerComponent, NavigationPlayerComponent, ComponentContext by componentContext {
     private val resolvedInitialPositionMs = initialPositionMs.coerceAtLeast(0)
     private val scope = CoroutineScope(SupervisorJob() + coroutineContext)
     private val mutableState = MutableStateFlow(PlayerUiState(media = media, positionMs = resolvedInitialPositionMs))
     override val state: StateFlow<PlayerUiState> = mutableState.asStateFlow()
+    private val mutableQueueControls = MutableStateFlow<QueueControls?>(null)
+    override val queueControls: StateFlow<QueueControls?> = mutableQueueControls.asStateFlow()
     private var lastPersistedPositionMs = resolvedInitialPositionMs
     private var loadRequested = false
     private var initialSeekConsumed = resolvedInitialPositionMs == 0L
@@ -83,6 +90,13 @@ class DefaultPlayerComponent(
                 }
             }
         }
+        playbackQueue?.let { queue -> scope.launch {
+            queue.collect { value ->
+                mutableQueueControls.value = value.current?.takeIf { it.reference == media.catalogItem.reference }?.let {
+                    QueueControls(value.currentIndex ?: 0, value.items.size, value.hasPrevious, value.hasNext)
+                }
+            }
+        } }
     }
 
     override fun play() {
@@ -139,6 +153,8 @@ class DefaultPlayerComponent(
         savedMediaRepository ?: return
         scope.launch { runCatching { savedMediaRepository.setWatchLater(media.catalogItem, enabled) } }
     }
+    override fun nextQueueItem() { onQueueNext() }
+    override fun previousQueueItem() { onQueuePrevious() }
 
     private fun collectBackendState(backendState: StateFlow<kg.dev.shared.feature.player.PlayerState>) {
         scope.launch {
@@ -161,7 +177,8 @@ class DefaultPlayerComponent(
                     playerState.positionMs - lastPersistedPositionMs >= PROGRESS_PERSIST_INTERVAL_MS
                 if (shouldPersist) {
                     if (playerState.isCompleted) completionPersisted = true
-                    persistProgress(playerState.positionMs, playerState.durationMs, playerState.isCompleted)
+                    persistProgress(playerState.positionMs, playerState.durationMs, playerState.isCompleted,
+                        afterPersist = if (playerState.isCompleted) ({ onNaturalCompletion(media.catalogItem.reference) }) else null)
                 }
                 previousPlaybackState = playerState.playbackState
             }
@@ -187,7 +204,8 @@ class DefaultPlayerComponent(
         positionMs: Long = mutableState.value.positionMs,
         durationMs: Long? = mutableState.value.durationMs,
         completed: Boolean = mutableState.value.isCompleted,
-        releaseAfterPersisting: Boolean = false
+        releaseAfterPersisting: Boolean = false,
+        afterPersist: (suspend () -> Unit)? = null,
     ) {
         if (media.source is PlaybackSource.ProviderControlled && providerPlaybackSession == null) {
             if (releaseAfterPersisting) releaseAndCancel()
@@ -212,6 +230,7 @@ class DefaultPlayerComponent(
                         watchedAtEpochMs = nowEpochMillis()
                     )
                 )
+                afterPersist?.invoke()
             } finally {
                 if (releaseAfterPersisting) releaseAndCancel()
             }

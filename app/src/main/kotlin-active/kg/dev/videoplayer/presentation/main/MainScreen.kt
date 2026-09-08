@@ -53,8 +53,8 @@ fun MainScreen(rootComponent: RootComponent<SearchComponent>) {
                 onLocalMediaImportRequested = onImportRequested
             )
         },
-        libraryComponentFactory = { componentContext, selected ->
-            DefaultLibraryHubComponent(componentContext, savedMediaRepository, libraryViewPreferences, mediaCollectionRepository, selected)
+        libraryComponentFactory = { componentContext, selected, playAll ->
+            DefaultLibraryHubComponent(componentContext, savedMediaRepository, libraryViewPreferences, mediaCollectionRepository, selected, onPlayAll = playAll)
         },
         onImportLocalMedia = { localVideoPicker.launch(arrayOf("video/*")) }
     ) { navigationComponent, modifier ->

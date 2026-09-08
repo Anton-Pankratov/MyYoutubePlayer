@@ -109,6 +109,37 @@ class SavedMediaIntegrationTest {
         }
     }
 
+    @Test fun collectionPlayAllQueueSnapshotIgnoresReorderAddRemoveAndDeletion() = runTest {
+        withGraph { _, _, direct, coordinator, database ->
+            val lifecycle = LifecycleRegistry().also { it.onCreate() }
+            val root = DefaultRootComponent(DefaultComponentContext(lifecycle), Configuration.Home, { Any() }, coordinator, StandardTestDispatcher(testScheduler))
+            val collections = SqlDelightMediaCollectionRepository(database, CollectionIdGenerator { CollectionId("snapshot") }) { 1L }
+            val id = collections.create("Snapshot")
+            val a = item("a"); val b = item("b"); val c = item("c"); val d = item("d")
+            listOf(a,b,c,d).forEach { direct.register(DirectMediaDescriptor(it.reference.externalId, it.title, "file:///${it.reference.externalId}.mp4", "video/mp4")) }
+            collections.addMedia(id,a); collections.addMedia(id,b); collections.addMedia(id,c)
+            val detail = DefaultCollectionDetailComponent(DefaultComponentContext(lifecycle),id,collections,root::openMedia,{},StandardTestDispatcher(testScheduler),root::playAll)
+            advanceUntilIdle(); detail.playAll(); advanceUntilIdle()
+            assertEquals(listOf(a.reference,b.reference,c.reference),root.playbackQueue.value.items.map { it.reference })
+
+            collections.moveMedia(id,c.reference,a.reference); advanceUntilIdle()
+            assertEquals(listOf(c.reference,a.reference,b.reference),collections.observeCollection(id).value!!.items.map { it.reference })
+            assertEquals(listOf(a.reference,b.reference,c.reference),root.playbackQueue.value.items.map { it.reference })
+            root.queueNext(); advanceUntilIdle()
+            assertEquals("b",assertIs<Configuration.Player>(root.childStack.value.active.configuration).externalId)
+
+            collections.addMedia(id,d); advanceUntilIdle()
+            assertEquals(3,root.playbackQueue.value.items.size); assertTrue(root.playbackQueue.value.items.none { it.reference == d.reference })
+            collections.removeMedia(id,b.reference); advanceUntilIdle()
+            assertEquals(listOf(a.reference,b.reference,c.reference),root.playbackQueue.value.items.map { it.reference })
+            collections.delete(id); advanceUntilIdle(); assertEquals(null,collections.observeCollection(id).value); assertTrue(root.playbackQueue.value.isActive)
+            root.queueNext(); advanceUntilIdle()
+            assertEquals("c",assertIs<Configuration.Player>(root.childStack.value.active.configuration).externalId)
+            assertEquals(2,root.playbackQueue.value.currentIndex)
+            lifecycle.onDestroy()
+        }
+    }
+
     private suspend fun withGraph(block: suspend (SavedMediaRepository, HistoryRepository, DirectMediaProvider, MediaOpenCoordinator, PlayerDatabase) -> Unit) {
         val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY); PlayerDatabase.Schema.create(driver); val database = createPlayerDatabase(driver)
         startKoin { modules(module {

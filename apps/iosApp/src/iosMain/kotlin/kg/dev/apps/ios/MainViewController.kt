@@ -70,6 +70,10 @@ fun MainViewController(youtubeApiKey: String): UIViewController {
                 nowEpochMillis = { kotlin.system.getTimeMillis() },
                 providerPlaybackAdapters = ProviderPlaybackAdapterRegistry(listOf(IosYouTubePlaybackAdapter)),
                 savedMediaRepository = koin.get<SavedMediaRepository>()
+                , playbackQueue = rootComponent.playbackQueue,
+                onQueueNext = rootComponent::queueNext,
+                onQueuePrevious = rootComponent::queuePrevious,
+                onNaturalCompletion = rootComponent::onQueueItemCompleted
             )
         }
     )
@@ -87,8 +91,8 @@ fun MainViewController(youtubeApiKey: String): UIViewController {
                         onItemSelected = selected
                     )
                 },
-                libraryComponentFactory = { context, selected ->
-                    DefaultLibraryHubComponent(context, koin.get<SavedMediaRepository>(), koin.get(), koin.get<MediaCollectionRepository>(), selected)
+                libraryComponentFactory = { context, selected, playAll ->
+                    DefaultLibraryHubComponent(context, koin.get<SavedMediaRepository>(), koin.get(), koin.get<MediaCollectionRepository>(), selected, onPlayAll = playAll)
                 },
                 playerContent = { component, modifier ->
                     IosPlayerContent(component as DefaultPlayerComponent, modifier)

@@ -59,6 +59,10 @@ class MainActivity : ComponentActivity() {
                         listOf(AndroidYouTubePlaybackAdapter)
                     ),
                     savedMediaRepository = get<SavedMediaRepository>()
+                    , playbackQueue = root.playbackQueue,
+                    onQueueNext = root::queueNext,
+                    onQueuePrevious = root::queuePrevious,
+                    onNaturalCompletion = root::onQueueItemCompleted
                 )
             }
         )

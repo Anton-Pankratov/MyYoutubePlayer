@@ -7,6 +7,7 @@ import com.arkivanov.decompose.router.stack.bringToFront
 import com.arkivanov.decompose.router.stack.childStack
 import com.arkivanov.decompose.router.stack.pop
 import com.arkivanov.decompose.router.stack.pushNew
+import com.arkivanov.decompose.router.stack.replaceCurrent
 import com.arkivanov.decompose.value.Value
 import com.arkivanov.decompose.value.MutableValue
 import kg.dev.shared.core.common.media.MediaCatalogItem
@@ -15,6 +16,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.Job
 import kotlin.coroutines.CoroutineContext
 
@@ -22,10 +24,15 @@ interface RootComponent<SearchComponent : Any> {
     val childStack: Value<ChildStack<Configuration, Child<SearchComponent>>>
     val navigationState: Value<NavigationState>
     val mediaOpenState: Value<MediaOpenState>
+    val playbackQueue: StateFlow<PlaybackQueueState>
 
     fun showHome()
     fun showSearch()
     fun openMedia(media: MediaCatalogItem, startPositionMs: Long = 0)
+    fun playAll(items: List<MediaCatalogItem>)
+    fun queueNext()
+    fun queuePrevious()
+    fun onQueueItemCompleted(reference: kg.dev.shared.core.common.media.MediaReference)
     fun retryOpenMedia()
     fun showProfile()
     fun navigateBack()
@@ -69,6 +76,8 @@ class DefaultRootComponent<SearchComponent : Any>(
     private val scope = CoroutineScope(SupervisorJob() + coroutineContext)
     private var openJob: Job? = null
     private var openGeneration = 0L
+    private var queueTransition = false
+    private lateinit var queueController: PlaybackQueueController
     private val navigation = StackNavigation<Configuration>()
 
     override val childStack: Value<ChildStack<Configuration, RootComponent.Child<SearchComponent>>> =
@@ -85,8 +94,11 @@ class DefaultRootComponent<SearchComponent : Any>(
     override val navigationState: Value<NavigationState> = mutableNavigationState
     private val mutableMediaOpenState = MutableValue<MediaOpenState>(MediaOpenState.Idle)
     override val mediaOpenState: Value<MediaOpenState> = mutableMediaOpenState
+    override val playbackQueue: StateFlow<PlaybackQueueState>
 
     init {
+        queueController = PlaybackQueueController(::openQueueCandidate)
+        playbackQueue = queueController.state
         lifecycle.subscribe(object : com.arkivanov.essenty.lifecycle.Lifecycle.Callbacks {
             override fun onDestroy() { openJob?.cancel(); scope.cancel() }
         })
@@ -103,6 +115,11 @@ class DefaultRootComponent<SearchComponent : Any>(
     override fun showProfile() = navigation.bringToFront(Configuration.Profile)
 
     override fun openMedia(media: MediaCatalogItem, startPositionMs: Long) {
+        queueController.clear()
+        openStandaloneMedia(media, startPositionMs)
+    }
+    private fun openStandaloneMedia(media: MediaCatalogItem, startPositionMs: Long) {
+        queueTransition = false
         val generation = ++openGeneration
         openJob?.cancel()
         openJob = scope.launch {
@@ -120,11 +137,42 @@ class DefaultRootComponent<SearchComponent : Any>(
         }
     }
 
+    override fun playAll(items: List<MediaCatalogItem>) = queueController.start(items)
+    override fun queueNext() = queueController.next()
+    override fun queuePrevious() = queueController.previous()
+    override fun onQueueItemCompleted(reference: kg.dev.shared.core.common.media.MediaReference) = queueController.onCompleted(reference)
+
+    private fun openQueueCandidate(index: Int, queueGeneration: Long) {
+        val media = queueController.state.value.items.getOrNull(index) ?: return
+        val generation = ++openGeneration
+        openJob?.cancel()
+        openJob = scope.launch {
+            mutableMediaOpenState.value = MediaOpenState.Resolving(media)
+            when (val result = mediaOpenCoordinator.open(media)) {
+                is MediaOpenResult.Player -> {
+                    if (generation != openGeneration || !queueController.settle(index, queueGeneration)) return@launch
+                    mutableMediaOpenState.value = MediaOpenState.Idle
+                    if (queueTransition) navigation.replaceCurrent(result.configuration.copy(startPositionMs = 0))
+                    else { queueTransition = true; navigation.pushNew(result.configuration.copy(startPositionMs = 0)) }
+                }
+                is MediaOpenResult.Failure -> if (generation == openGeneration) {
+                    if (result.retryable) mutableMediaOpenState.value = MediaOpenState.Failed(media, result.message, true)
+                    else queueController.unavailable(
+                        index,
+                        queueGeneration,
+                        forward = index > (queueController.state.value.currentIndex ?: -1),
+                    )
+                }
+            }
+        }
+    }
+
     override fun retryOpenMedia() {
         (mutableMediaOpenState.value as? MediaOpenState.Failed)?.let { openMedia(it.item) }
     }
 
     override fun navigateBack() {
+        if (childStack.value.active.configuration is Configuration.Player) queueController.clear()
         navigation.pop()
     }
 
