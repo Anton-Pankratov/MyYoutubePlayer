@@ -11,6 +11,8 @@ import com.arkivanov.decompose.router.stack.replaceCurrent
 import com.arkivanov.decompose.value.Value
 import com.arkivanov.decompose.value.MutableValue
 import kg.dev.shared.core.common.media.MediaCatalogItem
+import kg.dev.shared.core.common.media.DirectBackgroundEligibility
+import kg.dev.shared.core.common.media.directMimeBackgroundEligibility
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -34,6 +36,7 @@ interface RootComponent<SearchComponent : Any> {
     fun queuePrevious()
     fun onQueueItemCompleted(reference: kg.dev.shared.core.common.media.MediaReference)
     fun retryOpenMedia()
+    fun stopPlayback()
     fun showProfile()
     fun navigateBack()
 
@@ -70,7 +73,10 @@ class DefaultRootComponent<SearchComponent : Any>(
     },
     coroutineContext: CoroutineContext = Dispatchers.Main.immediate,
     private val playerComponentFactory: (ComponentContext, Configuration.Player) -> PlayerComponent =
-        { context, configuration -> DefaultPlayerComponent(context, configuration) }
+        { context, configuration -> DefaultPlayerComponent(context, configuration) },
+    private val canRetainEligibleDirectSession: (Configuration.Player) -> Boolean = { false },
+    private val onEligiblePlayerUiDetached: (Configuration.Player) -> Unit = {},
+    private val onStopPlayback: () -> Unit = {},
 ) : RootComponent<SearchComponent>, ComponentContext by componentContext {
     // Decompose navigation creates lifecycle-bound children and must run on the UI thread.
     private val scope = CoroutineScope(SupervisorJob() + coroutineContext)
@@ -171,8 +177,20 @@ class DefaultRootComponent<SearchComponent : Any>(
         (mutableMediaOpenState.value as? MediaOpenState.Failed)?.let { openMedia(it.item) }
     }
 
+    override fun stopPlayback() {
+        onStopPlayback()
+        queueController.clear()
+        if (childStack.value.active.configuration is Configuration.Player) navigation.pop()
+    }
+
     override fun navigateBack() {
-        if (childStack.value.active.configuration is Configuration.Player) queueController.clear()
+        val player = childStack.value.active.configuration as? Configuration.Player
+        if (player != null) {
+            if (player.isDirectBackgroundEligible() && canRetainEligibleDirectSession(player)) {
+                onEligiblePlayerUiDetached(player)
+            }
+            else queueController.clear()
+        }
         navigation.pop()
     }
 
@@ -188,6 +206,10 @@ class DefaultRootComponent<SearchComponent : Any>(
         Configuration.Profile -> RootComponent.Child.Profile(DefaultProfileComponent(childContext))
     }
 }
+
+private fun Configuration.Player.isDirectBackgroundEligible(): Boolean =
+    playbackKind == "direct" &&
+        directMimeBackgroundEligibility(mimeType) == DirectBackgroundEligibility.Eligible
 
 private class DefaultHomeComponent(componentContext: ComponentContext) :
     HomeComponent, ComponentContext by componentContext

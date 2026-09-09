@@ -320,6 +320,89 @@ class RootComponentMediaOpeningTest {
         assertEquals(Configuration.Home, root.childStack.value.active.configuration)
     }
 
+    @Test
+    fun eligibleDirectAudioBackDetachesPlayerWithoutClearingQueueOrStoppingSession() = runTest {
+        val audio = item("direct", "audio")
+        var detachCount = 0
+        var stopCount = 0
+        val root = DefaultRootComponent(
+            componentContext = DefaultComponentContext(LifecycleRegistry().also { it.onCreate() }),
+            initialConfiguration = Configuration.Home,
+            searchComponentFactory = { Any() },
+            mediaOpenCoordinator = object : MediaOpenCoordinator {
+                override suspend fun open(item: MediaCatalogItem) = MediaOpenResult.Player(
+                    Configuration.Player(
+                        providerId = item.reference.provider.value,
+                        externalId = item.reference.externalId,
+                        title = item.title,
+                        playbackKind = "direct",
+                        directUri = "https://example.test/audio",
+                        mimeType = "audio/mpeg",
+                    )
+                )
+            },
+            coroutineContext = StandardTestDispatcher(testScheduler),
+            canRetainEligibleDirectSession = { true },
+            onEligiblePlayerUiDetached = { detachCount++ },
+            onStopPlayback = { stopCount++ },
+        )
+
+        root.playAll(listOf(audio)); advanceUntilIdle()
+        root.navigateBack(); advanceUntilIdle()
+
+        assertEquals(1, detachCount)
+        assertEquals(0, stopCount)
+        assertTrue(root.playbackQueue.value.isActive)
+        assertEquals(Configuration.Home, root.childStack.value.active.configuration)
+    }
+
+    @Test
+    fun eligibleDirectAudioKeepsExistingSafeBackBehaviorUntilAHostReportsRetentionCapability() = runTest {
+        val audio = item("direct", "audio")
+        val root = DefaultRootComponent(
+            componentContext = DefaultComponentContext(LifecycleRegistry().also { it.onCreate() }),
+            initialConfiguration = Configuration.Home,
+            searchComponentFactory = { Any() },
+            mediaOpenCoordinator = object : MediaOpenCoordinator {
+                override suspend fun open(item: MediaCatalogItem) = MediaOpenResult.Player(
+                    Configuration.Player(item.reference.provider.value, item.reference.externalId, item.title, playbackKind = "direct", mimeType = "audio/mpeg")
+                )
+            },
+            coroutineContext = StandardTestDispatcher(testScheduler),
+        )
+
+        root.playAll(listOf(audio)); advanceUntilIdle()
+        root.navigateBack(); advanceUntilIdle()
+
+        assertFalse(root.playbackQueue.value.isActive)
+        assertEquals(Configuration.Home, root.childStack.value.active.configuration)
+    }
+
+    @Test
+    fun explicitStopInvokesSessionStopAndClearsQueue() = runTest {
+        val audio = item("direct", "audio")
+        var stopCount = 0
+        val root = DefaultRootComponent(
+            componentContext = DefaultComponentContext(LifecycleRegistry().also { it.onCreate() }),
+            initialConfiguration = Configuration.Home,
+            searchComponentFactory = { Any() },
+            mediaOpenCoordinator = object : MediaOpenCoordinator {
+                override suspend fun open(item: MediaCatalogItem) = MediaOpenResult.Player(
+                    Configuration.Player(item.reference.provider.value, item.reference.externalId, item.title, playbackKind = "direct", mimeType = "audio/mpeg")
+                )
+            },
+            coroutineContext = StandardTestDispatcher(testScheduler),
+            onStopPlayback = { stopCount++ },
+        )
+
+        root.playAll(listOf(audio)); advanceUntilIdle()
+        root.stopPlayback(); advanceUntilIdle()
+
+        assertEquals(1, stopCount)
+        assertFalse(root.playbackQueue.value.isActive)
+        assertEquals(Configuration.Home, root.childStack.value.active.configuration)
+    }
+
     private fun TestScope.root(coordinator: ControlledCoordinator): DefaultRootComponent<Any> = DefaultRootComponent(
         componentContext = DefaultComponentContext(LifecycleRegistry().also { it.onCreate() }),
         initialConfiguration = Configuration.Home,
