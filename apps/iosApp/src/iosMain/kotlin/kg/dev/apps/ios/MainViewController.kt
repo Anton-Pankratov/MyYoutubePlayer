@@ -22,6 +22,12 @@ import kg.dev.shared.feature.player.library.LibraryViewPreferencesStorage
 import kg.dev.shared.feature.home.presentation.DefaultHomeComponent
 import kg.dev.shared.feature.home.presentation.HomeMediaAvailability
 import kg.dev.shared.feature.player.IosVideoPlayerController
+import kg.dev.shared.feature.player.IosDirectPlaybackHost
+import kg.dev.shared.feature.player.DirectAudioSessionCoordinator
+import kg.dev.shared.feature.player.DirectAudioApplicationCallbackGateway
+import kg.dev.shared.feature.player.DirectAudioApplicationCallbacks
+import kg.dev.shared.feature.player.DirectPlaybackCommandCallbacks
+import kg.dev.shared.feature.player.directBackgroundEligibility
 import kg.dev.shared.feature.player.playerFeatureModule
 import kg.dev.shared.feature.player.PlayableMedia
 import kg.dev.shared.feature.player.PlaybackSource
@@ -33,6 +39,7 @@ import kg.dev.shared.core.common.media.MediaCatalogItem
 import kg.dev.shared.core.common.media.MediaProviderId
 import kg.dev.shared.core.common.media.MediaProviders
 import kg.dev.shared.core.common.media.MediaReference
+import kg.dev.shared.core.common.media.DirectBackgroundEligibility
 import org.koin.core.context.startKoin
 import org.koin.dsl.module
 import platform.UIKit.UIViewController
@@ -40,10 +47,24 @@ import kg.dev.shared.core.ui.design.MediaAppTheme
 
 fun MainViewController(youtubeApiKey: String): UIViewController {
     val koin = startKoin { modules(commonModules() + playerFeatureModule + iosModule(youtubeApiKey)) }.koin
+    val directAudioHost = koin.get<IosDirectPlaybackHost>()
+    val directAudioCoordinator = koin.get<DirectAudioSessionCoordinator>()
+    val directAudioCallbacks = koin.get<DirectAudioApplicationCallbackGateway>()
+    directAudioHost.bindSystemCommands(object : DirectPlaybackCommandCallbacks {
+        override fun play() = directAudioHost.play()
+        override fun pause() = directAudioHost.pause()
+        override fun seekTo(positionMs: Long) = directAudioHost.seekTo(positionMs)
+        override fun next() = directAudioCoordinator.next()
+        override fun previous() = directAudioCoordinator.previous()
+        override fun stop() = directAudioCoordinator.requestStop()
+    })
     lateinit var rootComponent: DefaultRootComponent<SearchComponent>
     rootComponent = DefaultRootComponent(
         componentContext = DefaultComponentContext(LifecycleRegistry()),
         mediaOpenCoordinator = koin.get(),
+        canRetainEligibleDirectSession = { directAudioHost.capabilities.supportsBackgroundPlayback },
+        onEligiblePlayerUiDetached = { directAudioHost.detachUi() },
+        onStopPlayback = directAudioCoordinator::stop,
         searchComponentFactory = { childContext -> DefaultSearchComponent(childContext, koin.get<SearchChannelsUseCase>(), onMediaSelected = rootComponent::openMedia) },
         playerComponentFactory = { childContext, configuration ->
             val reference = MediaReference(MediaProviderId(configuration.providerId), configuration.externalId)
@@ -52,18 +73,22 @@ fun MainViewController(youtubeApiKey: String): UIViewController {
             } else {
                 PlaybackSource.ProviderControlled(reference)
             }
+            val media = PlayableMedia(
+                MediaCatalogItem(
+                    reference = reference,
+                    title = configuration.title ?: configuration.externalId,
+                    thumbnailUrl = configuration.thumbnailUrl,
+                    authorTitle = configuration.authorTitle,
+                    durationMs = configuration.catalogDurationMs
+                ),
+                source
+            )
+            val serviceHost = directAudioHost.takeIf {
+                media.directBackgroundEligibility() == DirectBackgroundEligibility.Eligible
+            }
             DefaultPlayerComponent(
                 componentContext = childContext,
-                media = PlayableMedia(
-                    MediaCatalogItem(
-                        reference = reference,
-                        title = configuration.title ?: configuration.externalId,
-                        thumbnailUrl = configuration.thumbnailUrl,
-                        authorTitle = configuration.authorTitle,
-                        durationMs = configuration.catalogDurationMs
-                    ),
-                    source
-                ),
+                media = media,
                 videoPlayerController = IosVideoPlayerController(),
                 historyRepository = koin.get<HistoryRepository>(),
                 initialPositionMs = configuration.startPositionMs,
@@ -71,12 +96,23 @@ fun MainViewController(youtubeApiKey: String): UIViewController {
                 providerPlaybackAdapters = ProviderPlaybackAdapterRegistry(listOf(IosYouTubePlaybackAdapter)),
                 savedMediaRepository = koin.get<SavedMediaRepository>()
                 , playbackQueue = rootComponent.playbackQueue,
-                onQueueNext = rootComponent::queueNext,
-                onQueuePrevious = rootComponent::queuePrevious,
-                onNaturalCompletion = rootComponent::onQueueItemCompleted
+                onQueueNext = if (serviceHost != null) directAudioCoordinator::next else rootComponent::queueNext,
+                onQueuePrevious = if (serviceHost != null) directAudioCoordinator::previous else rootComponent::queuePrevious,
+                onNaturalCompletion = rootComponent::onQueueItemCompleted,
+                directPlaybackHost = serviceHost,
             )
         }
     )
+    val callbackOwner = object : DirectAudioApplicationCallbacks {
+        override suspend fun onNaturalCompletion(reference: MediaReference) {
+            rootComponent.onQueueItemCompleted(reference)
+            if (!rootComponent.playbackQueue.value.isActive) directAudioCoordinator.finishCompletedSession(reference)
+        }
+        override fun onNext() = rootComponent.queueNext()
+        override fun onPrevious() = rootComponent.queuePrevious()
+        override fun onStop() = rootComponent.stopPlayback()
+    }
+    directAudioCallbacks.replace(callbackOwner, callbackOwner)
     return ComposeUIViewController {
         MediaAppTheme {
             SharedAppContent(
@@ -106,6 +142,16 @@ private fun iosModule(youtubeApiKey: String) = module {
     single<ApiConfigurationProvider> { IosApiConfiguration(youtubeApiKey) }
     single<SqlDriver> { NativeSqliteDriver(PlayerDatabase.Schema, "youtube-player.db") }
     single<LibraryViewPreferencesStorage> { IosLibraryViewPreferencesStorage() }
+    single { IosDirectPlaybackHost() }
+    single { DirectAudioApplicationCallbackGateway() }
+    single {
+        DirectAudioSessionCoordinator(
+            host = get<IosDirectPlaybackHost>(),
+            historyRepository = get<HistoryRepository>(),
+            callbacks = get<DirectAudioApplicationCallbackGateway>(),
+            nowEpochMillis = { kotlin.system.getTimeMillis() },
+        )
+    }
 }
 
 private class IosApiConfiguration(

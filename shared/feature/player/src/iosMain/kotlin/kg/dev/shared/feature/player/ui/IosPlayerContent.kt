@@ -20,7 +20,8 @@ fun IosPlayerContent(component: DefaultPlayerComponent, modifier: Modifier = Mod
         component = component,
         modifier = modifier,
         providerAdapters = component.providerPlaybackAdapters,
-        mediaSurface = if (controller == null) null else { surfaceModifier ->
+        // Eligible Direct audio is rendered and retained by the process-scoped host, not a UIView.
+        mediaSurface = if (controller == null || component.directPlaybackHost != null) null else { surfaceModifier ->
             UIKitView(
                 factory = { IosPlayerView().also { it.player = controller.avPlayer } },
                 update = { it.player = controller.avPlayer },
