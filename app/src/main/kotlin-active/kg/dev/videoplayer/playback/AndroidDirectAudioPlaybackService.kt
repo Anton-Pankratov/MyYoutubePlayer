@@ -1,5 +1,6 @@
 package kg.dev.videoplayer.playback
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.common.AudioAttributes
@@ -22,6 +23,7 @@ import kg.dev.shared.feature.player.DirectPlaybackCommandCallbacks
 class AndroidDirectAudioPlaybackService : MediaSessionService() {
     private lateinit var player: ExoPlayer
     private lateinit var session: MediaSession
+    private val interruptionPolicy = AndroidAudioInterruptionPolicy()
 
     override fun onCreate() {
         super.onCreate()
@@ -33,6 +35,7 @@ class AndroidDirectAudioPlaybackService : MediaSessionService() {
                     .build(),
                 true,
             )
+            .setHandleAudioBecomingNoisy(true)
             .build()
         session = MediaSession.Builder(this, player)
             .setCallback(SessionCallbacks)
@@ -40,6 +43,11 @@ class AndroidDirectAudioPlaybackService : MediaSessionService() {
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession = session
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        // Keep intentional background playback alive, but do not retain an empty paused service.
+        if (interruptionPolicy.shouldStopServiceAfterTaskRemoval(isPlaybackOngoing)) stopSelf()
+    }
 
     override fun onDestroy() {
         session.release()

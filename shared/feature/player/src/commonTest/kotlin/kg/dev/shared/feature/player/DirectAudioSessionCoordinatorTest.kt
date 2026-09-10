@@ -138,6 +138,37 @@ class DirectAudioSessionCoordinatorTest {
     }
 
     @Test
+    fun interruptionPausePersistsProgressWithoutCompletionOrQueueAdvance() = runTest {
+        val fixture = fixture(recordQueueAdvance = true)
+        fixture.host.emit(state(media("a"), 1, PlaybackState.Playing, 4_000, 10_000))
+        advanceUntilIdle()
+        fixture.host.emit(state(media("a"), 1, PlaybackState.Paused, 4_200, 10_000))
+        advanceUntilIdle()
+
+        assertEquals(listOf("history-progress:a:4200"), fixture.events)
+        assertEquals(0, fixture.callbacks.completions)
+    }
+
+    @Test
+    fun interruptionPauseDoesNotPreventLaterNaturalCompletionForCurrentGeneration() = runTest {
+        val fixture = fixture(recordQueueAdvance = true)
+        fixture.host.emit(state(media("a"), 1, PlaybackState.Playing, 8_000, 10_000))
+        advanceUntilIdle()
+        fixture.host.emit(state(media("a"), 1, PlaybackState.Paused, 8_200, 10_000))
+        advanceUntilIdle()
+        fixture.host.emit(state(media("a"), 1, PlaybackState.Playing, 8_200, 10_000))
+        advanceUntilIdle()
+        fixture.host.emit(state(media("a"), 1, PlaybackState.Completed, 10_000, 10_000))
+        advanceUntilIdle()
+
+        assertEquals(
+            listOf("history-progress:a:8200", "history-complete:a", "root-completion:a", "queue-open:b"),
+            fixture.events,
+        )
+        assertEquals(1, fixture.callbacks.completions)
+    }
+
+    @Test
     fun absentApplicationOwnerPersistsCompletionWithoutFabricatingQueue() = runTest {
         val fixture = fixture(registerCallbacks = false)
         fixture.host.emit(state(media("a"), 1, PlaybackState.Playing, 8_000, 10_000))
