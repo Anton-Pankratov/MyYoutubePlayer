@@ -8,7 +8,11 @@ import kg.dev.shared.core.storage.db.PlayerDatabase
 import kg.dev.shared.feature.player.AndroidVideoPlayerController
 import kg.dev.shared.feature.player.VideoPlayerController
 import kg.dev.shared.feature.player.DirectMediaProvider
+import kg.dev.shared.feature.player.DirectAudioApplicationCallbackGateway
+import kg.dev.shared.feature.player.DirectAudioSessionCoordinator
+import kg.dev.shared.feature.history.domain.HistoryRepository
 import kg.dev.videoplayer.localmedia.AndroidLocalMediaImporter
+import kg.dev.videoplayer.playback.AndroidServiceDirectPlaybackHost
 import kg.dev.videoplayer.BuildConfig
 import android.content.pm.PackageManager
 import java.security.MessageDigest
@@ -34,6 +38,16 @@ fun androidModule() = module {
     }
     single<VideoPlayerController> {
         AndroidVideoPlayerController(androidContext())
+    }
+    single { AndroidServiceDirectPlaybackHost(androidContext()) }
+    single { DirectAudioApplicationCallbackGateway() }
+    single {
+        DirectAudioSessionCoordinator(
+            host = get<AndroidServiceDirectPlaybackHost>(),
+            historyRepository = get<HistoryRepository>(),
+            callbacks = get<DirectAudioApplicationCallbackGateway>(),
+            nowEpochMillis = System::currentTimeMillis,
+        )
     }
     single { AndroidLocalMediaImporter(androidContext(), get<DirectMediaProvider>()) }
 }

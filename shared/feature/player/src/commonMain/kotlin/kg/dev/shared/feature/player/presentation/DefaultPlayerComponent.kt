@@ -37,6 +37,7 @@ class DefaultPlayerComponent(
     private val onQueueNext: () -> Unit = {},
     private val onQueuePrevious: () -> Unit = {},
     private val onNaturalCompletion: suspend (kg.dev.shared.core.common.media.MediaReference) -> Unit = {},
+    val directPlaybackHost: kg.dev.shared.feature.player.DirectPlaybackHost? = null,
     coroutineContext: CoroutineContext = Dispatchers.Default
 ) : PlayerComponent, NavigationPlayerComponent, ComponentContext by componentContext {
     private val resolvedInitialPositionMs = initialPositionMs.coerceAtLeast(0)
@@ -70,11 +71,15 @@ class DefaultPlayerComponent(
     init {
         lifecycle.subscribe(object : Lifecycle.Callbacks {
             override fun onDestroy() {
-                persistProgress(releaseAfterPersisting = true)
+                if (directPlaybackHost != null) releaseAndCancel()
+                else persistProgress(releaseAfterPersisting = true)
             }
         })
         when (media.source) {
-            is PlaybackSource.Direct -> collectBackendState(videoPlayerController.state)
+            is PlaybackSource.Direct -> {
+                directPlaybackHost?.attachUi()
+                collectBackendState(directPlaybackHost?.state ?: videoPlayerController.state)
+            }
             is PlaybackSource.ProviderControlled -> providerPlaybackSession?.let {
                 collectBackendState(it.state)
                 scope.launch { it.preload(media) }
@@ -107,7 +112,7 @@ class DefaultPlayerComponent(
         scope.launch {
             when {
                 isFirstLoad -> {
-                    if (media.source is PlaybackSource.Direct) videoPlayerController.play(media)
+                    if (media.source is PlaybackSource.Direct) directPlaybackHost?.play(media) ?: videoPlayerController.play(media)
                     else providerSession?.play()
                     if (!initialSeekConsumed) {
                         initialSeekConsumed = true
@@ -124,8 +129,8 @@ class DefaultPlayerComponent(
     }
 
     override fun pause() {
-        if (media.source is PlaybackSource.Direct) videoPlayerController.pause() else providerPlaybackSession?.pause()
-        persistProgress()
+        if (media.source is PlaybackSource.Direct) directPlaybackHost?.pause() ?: videoPlayerController.pause() else providerPlaybackSession?.pause()
+        if (directPlaybackHost == null) persistProgress()
     }
 
     override fun seekTo(positionMs: Long) {
@@ -171,10 +176,10 @@ class DefaultPlayerComponent(
                     isWatchLater = mutableState.value.isWatchLater
                 )
                 if (!playerState.isCompleted) completionPersisted = false
-                val shouldPersist = (playerState.isCompleted && !completionPersisted) ||
+                val shouldPersist = directPlaybackHost == null && ((playerState.isCompleted && !completionPersisted) ||
                     (previousPlaybackState == PlaybackState.Playing &&
                         playerState.playbackState == PlaybackState.Paused) ||
-                    playerState.positionMs - lastPersistedPositionMs >= PROGRESS_PERSIST_INTERVAL_MS
+                    playerState.positionMs - lastPersistedPositionMs >= PROGRESS_PERSIST_INTERVAL_MS)
                 if (shouldPersist) {
                     if (playerState.isCompleted) completionPersisted = true
                     persistProgress(playerState.positionMs, playerState.durationMs, playerState.isCompleted,
@@ -186,11 +191,11 @@ class DefaultPlayerComponent(
     }
 
     private fun resumeBackend() {
-        if (media.source is PlaybackSource.Direct) videoPlayerController.resume() else providerPlaybackSession?.play()
+        if (media.source is PlaybackSource.Direct) directPlaybackHost?.play() ?: videoPlayerController.resume() else providerPlaybackSession?.play()
     }
 
     private fun seekBackendTo(positionMs: Long) {
-        if (media.source is PlaybackSource.Direct) videoPlayerController.seekTo(positionMs)
+        if (media.source is PlaybackSource.Direct) directPlaybackHost?.seekTo(positionMs) ?: videoPlayerController.seekTo(positionMs)
         else providerPlaybackSession?.seekTo(positionMs)
     }
 
@@ -245,7 +250,9 @@ class DefaultPlayerComponent(
     private fun releaseOnce() {
         if (released) return
         released = true
-        if (media.source is PlaybackSource.Direct) videoPlayerController.release() else providerPlaybackSession?.release()
+        if (media.source is PlaybackSource.Direct) {
+            if (directPlaybackHost != null) directPlaybackHost.detachUi() else videoPlayerController.release()
+        } else providerPlaybackSession?.release()
     }
 
     private companion object {

@@ -61,6 +61,8 @@ dependencies {
     implementation(project(":shared:feature:player"))
     implementation(project(":shared:feature:history"))
     implementation(libs.sqldelight.android.driver)
+    implementation(libs.media3.exoplayer)
+    implementation(libs.media3.session)
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)

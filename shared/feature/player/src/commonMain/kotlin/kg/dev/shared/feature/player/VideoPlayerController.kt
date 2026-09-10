@@ -19,7 +19,9 @@ data class PlayerState(
     val playbackState: PlaybackState = PlaybackState.Idle,
     val positionMs: Long = 0,
     val durationMs: Long? = null,
-    val bufferedPositionMs: Long? = null
+    val bufferedPositionMs: Long? = null,
+    /** Process-local identity supplied by long-lived playback hosts. */
+    val sessionGeneration: Long = 0,
 ) {
     val isPlaying: Boolean get() = playbackState == PlaybackState.Playing
     val isCompleted: Boolean get() = playbackState == PlaybackState.Completed

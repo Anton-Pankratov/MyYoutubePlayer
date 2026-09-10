@@ -37,11 +37,12 @@ import kg.dev.shared.feature.player.presentation.DefaultPlayerComponent
 @Composable
 fun AndroidPlayerContent(component: DefaultPlayerComponent, modifier: Modifier = Modifier) {
     val controller = component.videoPlayerController as? AndroidVideoPlayerController
+    val serviceOwnedAudio = component.directPlaybackHost != null
     PlayerContent(
         component = component,
         modifier = modifier,
         providerAdapters = component.providerPlaybackAdapters,
-        mediaSurface = if (controller == null) null else { surfaceModifier ->
+        mediaSurface = if (controller == null || serviceOwnedAudio) null else { surfaceModifier ->
             AndroidView(
                 factory = { context -> PlayerView(context).also {
                     it.player = controller.media3Player

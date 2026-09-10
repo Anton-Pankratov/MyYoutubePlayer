@@ -21,6 +21,8 @@ import kg.dev.shared.feature.player.PlaybackState
 import kg.dev.shared.feature.player.PlayerError
 import kg.dev.shared.feature.player.PlayerState
 import kg.dev.shared.feature.player.VideoPlayerController
+import kg.dev.shared.feature.player.DirectPlaybackHost
+import kg.dev.shared.feature.player.DirectPlaybackHostCapabilities
 import kg.dev.shared.feature.player.library.SavedMedia
 import kg.dev.shared.feature.player.library.SavedMediaRepository
 import kg.dev.shared.feature.player.library.SavedMediaState
@@ -468,6 +470,53 @@ class PlayerComponentTest {
         lifecycle.onDestroy()
     }
 
+    @Test
+    fun directHostOwnsEligibleAudioWithoutStartingLegacyController() = runTest {
+        val lifecycle = LifecycleRegistry().also { it.onCreate() }
+        val legacy = FakeController()
+        val host = FakeDirectHost()
+        val audio = PlayableMedia(media().catalogItem, PlaybackSource.Direct("https://example.test/audio", "audio/mpeg"))
+        val component = DefaultPlayerComponent(
+            DefaultComponentContext(lifecycle), audio, legacy, RecordingHistoryRepository(),
+            nowEpochMillis = { 99 }, directPlaybackHost = host,
+            coroutineContext = StandardTestDispatcher(testScheduler),
+        )
+
+        component.play(); advanceUntilIdle()
+        lifecycle.onDestroy(); advanceUntilIdle()
+
+        assertEquals(1, host.startCalls)
+        assertEquals(0, legacy.loadCalls)
+        assertEquals(1, host.detachCalls)
+        assertEquals(0, legacy.releaseCalls)
+    }
+
+    @Test
+    fun serviceHostedAudioHistoryAndCompletionAreNotOwnedByPlayerComponent() = runTest {
+        val lifecycle = LifecycleRegistry().also { it.onCreate() }
+        val host = FakeDirectHost()
+        val history = RecordingHistoryRepository()
+        var completions = 0
+        val audio = PlayableMedia(media().catalogItem, PlaybackSource.Direct("https://example.test/audio", "audio/mpeg"))
+        DefaultPlayerComponent(
+            DefaultComponentContext(lifecycle), audio, FakeController(), history,
+            nowEpochMillis = { 99 }, directPlaybackHost = host,
+            onNaturalCompletion = { completions++ },
+            coroutineContext = StandardTestDispatcher(testScheduler),
+        )
+
+        host.state.value = PlayerState(audio, PlaybackState.Playing, 6_000, 10_000, sessionGeneration = 1)
+        advanceUntilIdle()
+        host.state.value = PlayerState(audio, PlaybackState.Completed, 10_000, 10_000, sessionGeneration = 1)
+        advanceUntilIdle()
+        lifecycle.onDestroy()
+        advanceUntilIdle()
+
+        assertTrue(history.saved.isEmpty())
+        assertEquals(0, completions)
+        assertEquals(1, host.detachCalls)
+    }
+
     private suspend fun kotlinx.coroutines.test.TestScope.assertInitialSavedState(
         state: SavedMediaState, favorite: Boolean, watchLater: Boolean
     ) {
@@ -539,6 +588,21 @@ class PlayerComponentTest {
         }
         override fun release() { releaseCalls++ }
         fun publish(state: PlayerState) { mutableState.value = state }
+    }
+
+    private class FakeDirectHost : DirectPlaybackHost {
+        override val state = MutableStateFlow(PlayerState())
+        override val isUiAttached = MutableStateFlow(false)
+        override val capabilities = DirectPlaybackHostCapabilities(true, true)
+        var startCalls = 0
+        var detachCalls = 0
+        override fun attachUi() { isUiAttached.value = true }
+        override fun detachUi() { detachCalls++; isUiAttached.value = false }
+        override suspend fun play(media: PlayableMedia) { startCalls++; state.value = PlayerState(media, PlaybackState.Playing) }
+        override fun play() = Unit
+        override fun pause() = Unit
+        override fun seekTo(positionMs: Long) = Unit
+        override fun stop() = Unit
     }
 
     private class RecordingHistoryRepository(private val onSave: () -> Unit = {}) : HistoryRepository {
