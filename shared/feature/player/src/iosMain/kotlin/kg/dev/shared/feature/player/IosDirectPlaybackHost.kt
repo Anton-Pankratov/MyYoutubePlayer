@@ -6,7 +6,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
-import platform.AVFoundation.*
 import platform.AVFAudio.AVAudioSession
 import platform.AVFAudio.AVAudioSessionCategoryPlayback
 import platform.AVFAudio.AVAudioSessionInterruptionNotification
@@ -14,23 +13,23 @@ import platform.AVFAudio.AVAudioSessionInterruptionOptionKey
 import platform.AVFAudio.AVAudioSessionInterruptionOptionShouldResume
 import platform.AVFAudio.AVAudioSessionInterruptionTypeBegan
 import platform.AVFAudio.AVAudioSessionInterruptionTypeKey
+import platform.AVFAudio.AVAudioSessionModeDefault
 import platform.AVFAudio.AVAudioSessionRouteChangeNotification
 import platform.AVFAudio.AVAudioSessionRouteChangeReasonKey
 import platform.AVFAudio.AVAudioSessionRouteChangeReasonOldDeviceUnavailable
-import platform.AVFAudio.AVAudioSessionModeDefault
 import platform.AVFAudio.setActive
+import platform.AVFoundation.*
 import platform.CoreMedia.CMTimeMakeWithSeconds
-import platform.darwin.NSObject
 import platform.Foundation.NSNotificationCenter
 import platform.Foundation.NSNumber
 import platform.Foundation.NSURL
 import platform.MediaPlayer.MPChangePlaybackPositionCommandEvent
 import platform.MediaPlayer.MPMediaItemPropertyArtist
+import platform.MediaPlayer.MPMediaItemPropertyPlaybackDuration
 import platform.MediaPlayer.MPMediaItemPropertyTitle
 import platform.MediaPlayer.MPNowPlayingInfoCenter
 import platform.MediaPlayer.MPNowPlayingInfoPropertyElapsedPlaybackTime
 import platform.MediaPlayer.MPNowPlayingInfoPropertyPlaybackRate
-import platform.MediaPlayer.MPMediaItemPropertyPlaybackDuration
 import platform.MediaPlayer.MPRemoteCommandCenter
 import platform.MediaPlayer.MPRemoteCommandHandlerStatusCommandFailed
 import platform.MediaPlayer.MPRemoteCommandHandlerStatusSuccess
@@ -49,9 +48,10 @@ class IosDirectPlaybackHost : DirectPlaybackHost {
     private var player: AVPlayer? = null
     private var item: AVPlayerItem? = null
     private var media: PlayableMedia? = null
-    private var generation = 0L
+    private val sessionGeneration = IosHostSessionGeneration()
     private var started = false
     private var completionObserver: Any? = null
+    private var failureObserver: Any? = null
     private var timeObserver: Any? = null
     private var remoteRouter: IosRemoteCommandRouter? = null
     private val commandCenter = MPRemoteCommandCenter.sharedCommandCenter()
@@ -73,31 +73,37 @@ class IosDirectPlaybackHost : DirectPlaybackHost {
         if (remoteCommandsInstalled) return
         remoteCommandsInstalled = true
         commandCenter.playCommand.addTargetWithHandler {
-            if (remoteRouter?.play(item != null) == true) MPRemoteCommandHandlerStatusSuccess else {
+            if (remoteRouter?.play(hasActiveMedia()) == true) MPRemoteCommandHandlerStatusSuccess else {
                 MPRemoteCommandHandlerStatusCommandFailed
             }
         }
         commandCenter.pauseCommand.addTargetWithHandler {
-            if (remoteRouter?.pause(item != null) == true) MPRemoteCommandHandlerStatusSuccess else {
+            if (remoteRouter?.pause(hasActiveMedia()) == true) MPRemoteCommandHandlerStatusSuccess else {
                 MPRemoteCommandHandlerStatusCommandFailed
             }
         }
         commandCenter.changePlaybackPositionCommand.addTargetWithHandler { event ->
             val seconds = (event as? MPChangePlaybackPositionCommandEvent)?.positionTime
-            if (seconds == null || remoteRouter?.seek(seconds, mutableState.value.durationMs) != true) {
+            if (seconds == null || !hasActiveMedia() || remoteRouter?.seek(seconds, mutableState.value.durationMs) != true) {
                 MPRemoteCommandHandlerStatusCommandFailed
             } else {
                 MPRemoteCommandHandlerStatusSuccess
             }
         }
         commandCenter.nextTrackCommand.addTargetWithHandler {
-            remoteRouter?.next(); MPRemoteCommandHandlerStatusSuccess
+            if (remoteRouter?.next(hasActiveMedia()) == true) MPRemoteCommandHandlerStatusSuccess else {
+                MPRemoteCommandHandlerStatusCommandFailed
+            }
         }
         commandCenter.previousTrackCommand.addTargetWithHandler {
-            remoteRouter?.previous(); MPRemoteCommandHandlerStatusSuccess
+            if (remoteRouter?.previous(hasActiveMedia()) == true) MPRemoteCommandHandlerStatusSuccess else {
+                MPRemoteCommandHandlerStatusCommandFailed
+            }
         }
         commandCenter.stopCommand.addTargetWithHandler {
-            remoteRouter?.stop(); MPRemoteCommandHandlerStatusSuccess
+            if (remoteRouter?.stop(hasActiveMedia()) == true) MPRemoteCommandHandlerStatusSuccess else {
+                MPRemoteCommandHandlerStatusCommandFailed
+            }
         }
     }
 
@@ -109,27 +115,23 @@ class IosDirectPlaybackHost : DirectPlaybackHost {
                 publish(PlaybackState.Error(PlayerError.UnsupportedMedia), media)
                 return@withContext
             }
-            completionObserver?.let(NSNotificationCenter.defaultCenter::removeObserver)
-            removeTimeObserver()
-            generation++
+
+            // Invalidate first. A queued callback for the old item cannot mutate this session.
+            val generation = sessionGeneration.replaceOrInvalidate()
+            removeItemObservers()
             audioSessionPolicy.onSessionStarted(generation)
             this@IosDirectPlaybackHost.media = media
             started = false
+
             val newItem = AVPlayerItem(uRL = url)
             item = newItem
             val activePlayer = player ?: AVPlayer(playerItem = newItem).also { player = it }
             if (activePlayer.currentItem !== newItem) activePlayer.replaceCurrentItemWithPlayerItem(newItem)
-            completionObserver = NSNotificationCenter.defaultCenter.addObserverForName(
-                AVPlayerItemDidPlayToEndTimeNotification, newItem, null
-            ) { if (item === newItem) publish(PlaybackState.Completed, media) }
-            timeObserver = activePlayer.addPeriodicTimeObserverForInterval(
-                CMTimeMakeWithSeconds(1.0, 1_000), null
-            ) { time ->
-                if (item === newItem) {
-                    publishEngineState(cmtimeToMilliseconds(time) ?: 0)
-                }
-            }
+            installItemObservers(newItem, generation, media)
+
             if (!activateAudioSession()) {
+                audioSessionPolicy.onPause(generation)
+                activePlayer.pause()
                 publish(PlaybackState.Error(PlayerError.SourceUnavailable), media)
                 return@withContext
             }
@@ -139,37 +141,87 @@ class IosDirectPlaybackHost : DirectPlaybackHost {
         }
     }
 
-    override fun play() = onMain { audioSessionPolicy.onPlay(); player?.play(); publishEngineState(); updateNowPlaying() }
+    override fun play() = onMain {
+        val generation = sessionGeneration.current()
+        if (!hasActiveMedia() || !activateAudioSession()) {
+            if (hasActiveMedia()) publish(PlaybackState.Error(PlayerError.SourceUnavailable))
+            return@onMain
+        }
+        audioSessionPolicy.onPlay(generation)
+        player?.play()
+        publishEngineState()
+    }
+
     override fun pause() = onMain {
-        audioSessionPolicy.onPauseOrStop()
+        val generation = sessionGeneration.current()
+        if (!hasActiveMedia()) return@onMain
+        audioSessionPolicy.onPause(generation)
         player?.pause()
         publish(PlaybackState.Paused)
-        updateNowPlaying()
     }
+
     override fun seekTo(positionMs: Long) = onMain {
-        player?.seekToTime(CMTimeMakeWithSeconds(millisecondsToSeconds(positionMs.coerceAtLeast(0)), 1_000))
-        publish(positionMs = positionMs.coerceAtLeast(0))
-        updateNowPlaying()
+        if (!hasActiveMedia()) return@onMain
+        val clamped = mutableState.value.durationMs?.takeIf { it > 0 }
+            ?.let { positionMs.coerceIn(0, it) }
+            ?: positionMs.coerceAtLeast(0)
+        player?.seekToTime(CMTimeMakeWithSeconds(millisecondsToSeconds(clamped), 1_000))
+        publish(positionMs = clamped)
     }
+
     override fun stop() = onMain {
-        generation++
-        audioSessionPolicy.onPauseOrStop()
-        completionObserver?.let(NSNotificationCenter.defaultCenter::removeObserver)
-        completionObserver = null
-        removeTimeObserver()
+        val stoppedGeneration = sessionGeneration.current()
+        val invalidatedGeneration = sessionGeneration.replaceOrInvalidate()
+        audioSessionPolicy.onStop(stoppedGeneration)
+        removeItemObservers()
         player?.pause()
         player?.replaceCurrentItemWithPlayerItem(null)
         item = null
         media = null
         started = false
         deactivateAudioSession()
-        mutableState.value = PlayerState(sessionGeneration = generation)
+        mutableState.value = PlayerState(sessionGeneration = invalidatedGeneration)
         MPNowPlayingInfoCenter.defaultCenter().nowPlayingInfo = null
+    }
+
+    private fun installItemObservers(newItem: AVPlayerItem, generation: Long, media: PlayableMedia) {
+        completionObserver = NSNotificationCenter.defaultCenter.addObserverForName(
+            AVPlayerItemDidPlayToEndTimeNotification,
+            newItem,
+            null,
+        ) {
+            onMain {
+                if (isCurrentItem(generation, newItem) && sessionGeneration.claimCompletion(generation)) {
+                    publish(PlaybackState.Completed, media)
+                }
+            }
+        }
+        failureObserver = NSNotificationCenter.defaultCenter.addObserverForName(
+            AVPlayerItemFailedToPlayToEndTimeNotification,
+            newItem,
+            null,
+        ) {
+            onMain {
+                if (isCurrentItem(generation, newItem)) {
+                    audioSessionPolicy.onPause(generation)
+                    player?.pause()
+                    publish(iosCurrentItemFailureState(), media)
+                }
+            }
+        }
+        timeObserver = player?.addPeriodicTimeObserverForInterval(
+            CMTimeMakeWithSeconds(1.0, 1_000),
+            dispatch_get_main_queue(),
+        ) { time ->
+            if (isCurrentItem(generation, newItem)) {
+                publishEngineState(cmtimeToMilliseconds(time) ?: 0)
+            }
+        }
     }
 
     private fun publishEngineState(positionMs: Long = cmtimeToMilliseconds(player?.currentTime()) ?: 0) {
         val next = when {
-            item?.status == AVPlayerItemStatusFailed -> PlaybackState.Error(PlayerError.SourceUnavailable)
+            item?.status == AVPlayerItemStatusFailed -> iosCurrentItemFailureState()
             item?.status != AVPlayerItemStatusReadyToPlay -> PlaybackState.Loading
             player?.timeControlStatus == AVPlayerTimeControlStatusPlaying -> PlaybackState.Playing
             player?.timeControlStatus == AVPlayerTimeControlStatusWaitingToPlayAtSpecifiedRate -> PlaybackState.Buffering
@@ -177,6 +229,7 @@ class IosDirectPlaybackHost : DirectPlaybackHost {
             else -> PlaybackState.Ready
         }
         if (next == PlaybackState.Playing) started = true
+        if (next is PlaybackState.Error) audioSessionPolicy.onPause(sessionGeneration.current())
         publish(next, positionMs = positionMs)
     }
 
@@ -190,14 +243,23 @@ class IosDirectPlaybackHost : DirectPlaybackHost {
             playbackState = playbackState,
             positionMs = positionMs,
             durationMs = cmtimeToMilliseconds(item?.duration),
-            sessionGeneration = generation,
+            sessionGeneration = sessionGeneration.current(),
         )
         updateNowPlaying()
     }
 
+    private fun hasActiveMedia(): Boolean = item != null && media != null
+
+    private fun isCurrentItem(generation: Long, expectedItem: AVPlayerItem): Boolean =
+        sessionGeneration.isCurrent(generation) && item === expectedItem && hasActiveMedia()
+
     private fun onMain(block: () -> Unit) = dispatch_async(dispatch_get_main_queue(), block)
 
-    private fun removeTimeObserver() {
+    private fun removeItemObservers() {
+        completionObserver?.let(NSNotificationCenter.defaultCenter::removeObserver)
+        completionObserver = null
+        failureObserver?.let(NSNotificationCenter.defaultCenter::removeObserver)
+        failureObserver = null
         timeObserver?.let { observer -> player?.removeTimeObserver(observer) }
         timeObserver = null
     }
@@ -217,39 +279,52 @@ class IosDirectPlaybackHost : DirectPlaybackHost {
         if (interruptionObserver != null || routeObserver != null) return
         val center = NSNotificationCenter.defaultCenter()
         interruptionObserver = center.addObserverForName(AVAudioSessionInterruptionNotification, null, null) { notification ->
-            val type = (notification?.userInfo?.get(AVAudioSessionInterruptionTypeKey) as? NSNumber)?.unsignedLongValue
-            if (type == AVAudioSessionInterruptionTypeBegan) {
-                audioSessionPolicy.onInterruptionBegan(
-                    generation,
-                    wasPlaying = item != null && mutableState.value.playbackState == PlaybackState.Playing,
-                )
-                player?.pause()
-                publish(PlaybackState.Paused)
-                updateNowPlaying()
-            } else {
-                val shouldResume = ((notification?.userInfo?.get(AVAudioSessionInterruptionOptionKey) as? NSNumber)?.unsignedLongValue ?: 0uL) and AVAudioSessionInterruptionOptionShouldResume != 0uL
-                if (audioSessionPolicy.shouldResume(generation, shouldResume) && item != null) {
-                    player?.play()
-                    publishEngineState()
+            onMain {
+                val type = (notification?.userInfo?.get(AVAudioSessionInterruptionTypeKey) as? NSNumber)?.unsignedLongValue
+                val generation = sessionGeneration.current()
+                if (type == AVAudioSessionInterruptionTypeBegan) {
+                    if (audioSessionPolicy.onInterruptionBegan(
+                            generation,
+                            wasPlaying = hasActiveMedia() && mutableState.value.playbackState == PlaybackState.Playing,
+                        )
+                    ) {
+                        player?.pause()
+                        publish(PlaybackState.Paused)
+                    }
+                } else {
+                    val options = (notification?.userInfo?.get(AVAudioSessionInterruptionOptionKey) as? NSNumber)
+                        ?.unsignedLongValue ?: 0uL
+                    val shouldResume = options and AVAudioSessionInterruptionOptionShouldResume != 0uL
+                    // claimResume revalidates current intent and atomically consumes this end event.
+                    if (audioSessionPolicy.claimResume(generation, shouldResume) && isCurrentItem(generation, item ?: return@onMain)) {
+                        if (activateAudioSession()) {
+                            player?.play()
+                            publishEngineState()
+                        } else {
+                            audioSessionPolicy.onPause(generation)
+                            publish(PlaybackState.Error(PlayerError.SourceUnavailable))
+                        }
+                    }
                 }
-                audioSessionPolicy.onInterruptionEnded()
             }
         }
         routeObserver = center.addObserverForName(AVAudioSessionRouteChangeNotification, null, null) { notification ->
-            val reason = (notification?.userInfo?.get(AVAudioSessionRouteChangeReasonKey) as? NSNumber)?.unsignedLongValue
-            if (reason == AVAudioSessionRouteChangeReasonOldDeviceUnavailable) {
-                audioSessionPolicy.onRouteLost()
-                player?.pause()
-                publish(PlaybackState.Paused)
-                updateNowPlaying()
+            onMain {
+                val reason = (notification?.userInfo?.get(AVAudioSessionRouteChangeReasonKey) as? NSNumber)?.unsignedLongValue
+                if (iosRouteChangeAction(reason == AVAudioSessionRouteChangeReasonOldDeviceUnavailable) == IosRouteChangeAction.PauseAndCancelResume) {
+                    val generation = sessionGeneration.current()
+                    if (audioSessionPolicy.onRouteLost(generation) && hasActiveMedia()) {
+                        player?.pause()
+                        publish(PlaybackState.Paused)
+                    }
+                }
             }
         }
     }
 
     private fun updateNowPlaying() {
         val activeMedia = media ?: return
-        val state = mutableState.value
-        val projection = nowPlayingProjection(activeMedia, state)
+        val projection = nowPlayingProjection(activeMedia, mutableState.value)
         val info = buildMap<Any?, Any> {
             put(MPMediaItemPropertyTitle, projection.title)
             projection.author?.let { put(MPMediaItemPropertyArtist, it) }
