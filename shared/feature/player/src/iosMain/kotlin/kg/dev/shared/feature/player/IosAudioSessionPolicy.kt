@@ -92,6 +92,14 @@ internal class IosAudioSessionPolicy {
         resumableGeneration = null
         return true
     }
+
+    /** Media-services reset is conservative: retain media identity but require explicit Play. */
+    fun onMediaServicesReset(generation: Long) {
+        if (activeGeneration != generation) return
+        playbackWanted = false
+        interruptionGeneration = null
+        resumableGeneration = null
+    }
 }
 
 internal enum class IosRouteChangeAction {

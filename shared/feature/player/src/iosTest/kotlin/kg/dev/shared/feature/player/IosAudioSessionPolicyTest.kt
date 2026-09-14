@@ -109,6 +109,16 @@ class IosAudioSessionPolicyTest {
     }
 
     @Test
+    fun mediaServicesResetInvalidatesPendingResume() {
+        val policy = IosAudioSessionPolicy()
+        policy.onSessionStarted(1)
+        policy.onInterruptionBegan(1, wasPlaying = true)
+        policy.onMediaServicesReset(1)
+
+        assertFalse(policy.claimResume(1, systemAllowsResume = true))
+    }
+
+    @Test
     fun newDeviceAvailableDoesNotResumeRouteLossPause() {
         assertEquals(IosRouteChangeAction.Ignore, iosRouteChangeAction(isOldDeviceUnavailable = false))
         assertEquals(IosRouteChangeAction.PauseAndCancelResume, iosRouteChangeAction(isOldDeviceUnavailable = true))

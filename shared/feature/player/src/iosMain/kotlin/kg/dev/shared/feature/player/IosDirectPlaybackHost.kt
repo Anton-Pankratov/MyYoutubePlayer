@@ -12,7 +12,9 @@ import platform.AVFAudio.AVAudioSessionInterruptionNotification
 import platform.AVFAudio.AVAudioSessionInterruptionOptionKey
 import platform.AVFAudio.AVAudioSessionInterruptionOptionShouldResume
 import platform.AVFAudio.AVAudioSessionInterruptionTypeBegan
+import platform.AVFAudio.AVAudioSessionInterruptionTypeEnded
 import platform.AVFAudio.AVAudioSessionInterruptionTypeKey
+import platform.AVFAudio.AVAudioSessionMediaServicesWereResetNotification
 import platform.AVFAudio.AVAudioSessionModeDefault
 import platform.AVFAudio.AVAudioSessionRouteChangeNotification
 import platform.AVFAudio.AVAudioSessionRouteChangeReasonKey
@@ -58,6 +60,7 @@ class IosDirectPlaybackHost : DirectPlaybackHost {
     private var remoteCommandsInstalled = false
     private var interruptionObserver: Any? = null
     private var routeObserver: Any? = null
+    private var mediaServicesResetObserver: Any? = null
     private val audioSessionPolicy = IosAudioSessionPolicy()
 
     init {
@@ -144,7 +147,10 @@ class IosDirectPlaybackHost : DirectPlaybackHost {
     override fun play() = onMain {
         val generation = sessionGeneration.current()
         if (!hasActiveMedia() || !activateAudioSession()) {
-            if (hasActiveMedia()) publish(PlaybackState.Error(PlayerError.SourceUnavailable))
+            if (hasActiveMedia()) {
+                audioSessionPolicy.onPause(generation)
+                publish(PlaybackState.Error(PlayerError.SourceUnavailable))
+            }
             return@onMain
         }
         audioSessionPolicy.onPlay(generation)
@@ -276,7 +282,7 @@ class IosDirectPlaybackHost : DirectPlaybackHost {
     }
 
     private fun installAudioSessionObservers() {
-        if (interruptionObserver != null || routeObserver != null) return
+        if (interruptionObserver != null || routeObserver != null || mediaServicesResetObserver != null) return
         val center = NSNotificationCenter.defaultCenter()
         interruptionObserver = center.addObserverForName(AVAudioSessionInterruptionNotification, null, null) { notification ->
             onMain {
@@ -291,7 +297,7 @@ class IosDirectPlaybackHost : DirectPlaybackHost {
                         player?.pause()
                         publish(PlaybackState.Paused)
                     }
-                } else {
+                } else if (type == AVAudioSessionInterruptionTypeEnded) {
                     val options = (notification?.userInfo?.get(AVAudioSessionInterruptionOptionKey) as? NSNumber)
                         ?.unsignedLongValue ?: 0uL
                     val shouldResume = options and AVAudioSessionInterruptionOptionShouldResume != 0uL
@@ -317,6 +323,20 @@ class IosDirectPlaybackHost : DirectPlaybackHost {
                         player?.pause()
                         publish(PlaybackState.Paused)
                     }
+                }
+            }
+        }
+        mediaServicesResetObserver = center.addObserverForName(
+            AVAudioSessionMediaServicesWereResetNotification,
+            null,
+            null,
+        ) {
+            onMain {
+                val generation = sessionGeneration.current()
+                if (hasActiveMedia()) {
+                    audioSessionPolicy.onMediaServicesReset(generation)
+                    player?.pause()
+                    publish(PlaybackState.Paused)
                 }
             }
         }
