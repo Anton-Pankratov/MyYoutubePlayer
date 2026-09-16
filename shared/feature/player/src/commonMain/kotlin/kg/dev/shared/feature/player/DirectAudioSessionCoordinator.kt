@@ -103,6 +103,14 @@ class DirectAudioSessionCoordinator(
         }
     }
 
+    /** Stops the native Direct-audio session at a foreground-only queue boundary without clearing the application queue. */
+    suspend fun stopForForegroundPlayback() {
+        sessionMutex.withLock {
+            invalidateCurrentSession()
+            host.stop()
+        }
+    }
+
     /** Called by a platform/system Stop command. */
     fun requestStop() {
         if (!callbacks.stop()) stop()

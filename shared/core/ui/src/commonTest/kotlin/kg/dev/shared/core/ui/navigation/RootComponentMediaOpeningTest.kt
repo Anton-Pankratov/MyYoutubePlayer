@@ -220,6 +220,7 @@ class RootComponentMediaOpeningTest {
         assertEquals(0, root.playbackQueue.value.currentIndex)
         assertEquals(1, root.playbackQueue.value.pendingIndex)
         assertIs<MediaOpenState.Failed>(root.mediaOpenState.value)
+        assertEquals(ForegroundPlaybackState.Idle, root.foregroundPlaybackState.value)
     }
 
     @Test
@@ -257,6 +258,7 @@ class RootComponentMediaOpeningTest {
         root.playAll(listOf(a,b)); advanceUntilIdle(); coordinator.complete(a); advanceUntilIdle()
         root.onQueueItemCompleted(a.reference); advanceUntilIdle()
         assertEquals(listOf(a.reference,b.reference), coordinator.requests.map { it.reference }); assertFalse(root.playbackQueue.value.isActive); assertEquals("a", player(root).externalId)
+        assertEquals(ForegroundPlaybackState.Idle, root.foregroundPlaybackState.value)
     }
 
     @Test
@@ -403,12 +405,231 @@ class RootComponentMediaOpeningTest {
         assertEquals(Configuration.Home, root.childStack.value.active.configuration)
     }
 
-    private fun TestScope.root(coordinator: ControlledCoordinator): DefaultRootComponent<Any> = DefaultRootComponent(
+    @Test
+    fun backgroundDirectAudioCompletionContinuesToDirectAudio() = runTest {
+        val c = ControlledCoordinator()
+        val a = item("direct", "a")
+        val b = item("direct", "b")
+        c.enqueue(a); c.enqueue(b)
+        var boundaryStops = 0
+        val root = root(c, onForegroundPlaybackRequired = { boundaryStops++ })
+
+        root.playAll(listOf(a, b)); advanceUntilIdle(); c.completeDirectAudio(a); advanceUntilIdle()
+        root.navigateBack(); root.onQueueItemCompleted(a.reference); advanceUntilIdle(); c.completeDirectAudio(b); advanceUntilIdle()
+
+        assertEquals("b", player(root).externalId)
+        assertEquals(1, root.playbackQueue.value.currentIndex)
+        assertEquals(ForegroundPlaybackState.Idle, root.foregroundPlaybackState.value)
+        assertEquals(0, boundaryStops)
+    }
+
+    @Test
+    fun backgroundDirectAudioCompletionStopsAtProviderControlledAndRestoresExactlyOnce() = runTest {
+        val c = ControlledCoordinator()
+        val a = item("direct", "a")
+        val b = item("provider", "b")
+        val last = item("direct", "c")
+        c.enqueue(a); c.enqueue(b)
+        var boundaryStops = 0
+        val root = root(c, onForegroundPlaybackRequired = { boundaryStops++ })
+
+        root.playAll(listOf(a, b, last)); advanceUntilIdle(); c.completeDirectAudio(a); advanceUntilIdle()
+        root.navigateBack(); root.onQueueItemCompleted(a.reference); advanceUntilIdle(); c.complete(b); advanceUntilIdle()
+
+        assertEquals(1, root.playbackQueue.value.currentIndex)
+        assertEquals(b.reference, assertIs<ForegroundPlaybackState.Required>(root.foregroundPlaybackState.value).item.reference)
+        assertEquals(Configuration.Home, root.childStack.value.active.configuration)
+        assertEquals(listOf(a.reference, b.reference), c.requests.map { it.reference })
+        assertEquals(1, boundaryStops)
+
+        root.openPendingForegroundPlayback()
+        root.openPendingForegroundPlayback()
+
+        assertEquals("b", player(root).externalId)
+        assertEquals(ForegroundPlaybackState.Idle, root.foregroundPlaybackState.value)
+        assertEquals(listOf(a.reference, b.reference), c.requests.map { it.reference })
+        assertEquals(last.reference, root.playbackQueue.value.items[2].reference)
+    }
+
+    @Test
+    fun backgroundDirectAudioCompletionStopsAtDirectVideoAndOpensNormallyInForeground() = runTest {
+        val c = ControlledCoordinator()
+        val a = item("direct", "a")
+        val video = item("direct", "video")
+        val last = item("direct", "c")
+        c.enqueue(a); c.enqueue(video)
+        val root = root(c)
+
+        root.playAll(listOf(a, video, last)); advanceUntilIdle(); c.completeDirectAudio(a); advanceUntilIdle()
+        root.navigateBack(); root.onQueueItemCompleted(a.reference); advanceUntilIdle(); c.completeDirectVideo(video); advanceUntilIdle()
+
+        assertEquals(video.reference, root.playbackQueue.value.current?.reference)
+        assertIs<ForegroundPlaybackState.Required>(root.foregroundPlaybackState.value)
+        assertEquals(Configuration.Home, root.childStack.value.active.configuration)
+
+        root.openPendingForegroundPlayback()
+
+        val opened = player(root)
+        assertEquals("video", opened.externalId)
+        assertEquals("direct", opened.playbackKind)
+        assertEquals("video/mp4", opened.mimeType)
+    }
+
+    @Test
+    fun foregroundAvailableOpensProviderAndDirectVideoTargetsNormally() = runTest {
+        val c = ControlledCoordinator()
+        val a = item("direct", "a")
+        val provider = item("provider", "b")
+        val video = item("direct", "video")
+        c.enqueue(a); c.enqueue(provider); c.enqueue(video)
+        var boundaryStops = 0
+        val root = root(c, onForegroundPlaybackRequired = { boundaryStops++ })
+
+        root.playAll(listOf(a, provider, video)); advanceUntilIdle(); c.completeDirectAudio(a); advanceUntilIdle()
+        root.queueNext(); advanceUntilIdle(); c.complete(provider); advanceUntilIdle()
+        assertEquals("b", player(root).externalId)
+        assertEquals(ForegroundPlaybackState.Idle, root.foregroundPlaybackState.value)
+
+        root.queueNext(); advanceUntilIdle(); c.completeDirectVideo(video); advanceUntilIdle()
+        assertEquals("video", player(root).externalId)
+        assertEquals("video/mp4", player(root).mimeType)
+        assertEquals(ForegroundPlaybackState.Idle, root.foregroundPlaybackState.value)
+        assertEquals(2, boundaryStops)
+    }
+
+    @Test
+    fun foregroundLifecycleRestoreOpensPendingTargetExactlyOnce() = runTest {
+        val lifecycle = LifecycleRegistry().also { it.onCreate() }
+        val c = ControlledCoordinator()
+        val a = item("direct", "a")
+        val b = item("provider", "b")
+        c.enqueue(a); c.enqueue(b)
+        val root = DefaultRootComponent(
+            componentContext = DefaultComponentContext(lifecycle),
+            initialConfiguration = Configuration.Home,
+            searchComponentFactory = { Any() },
+            mediaOpenCoordinator = c,
+            coroutineContext = StandardTestDispatcher(testScheduler),
+            canRetainEligibleDirectSession = { true },
+        )
+        lifecycle.onStart()
+        lifecycle.onResume()
+        root.playAll(listOf(a, b)); advanceUntilIdle(); c.completeDirectAudio(a); advanceUntilIdle()
+
+        lifecycle.onPause()
+        lifecycle.onStop()
+        root.onQueueItemCompleted(a.reference); advanceUntilIdle(); c.complete(b); advanceUntilIdle()
+        assertIs<ForegroundPlaybackState.Required>(root.foregroundPlaybackState.value)
+
+        lifecycle.onStart()
+        lifecycle.onResume()
+        root.openPendingForegroundPlayback()
+
+        assertEquals("b", player(root).externalId)
+        assertEquals(listOf(a.reference, b.reference), c.requests.map { it.reference })
+        assertEquals(ForegroundPlaybackState.Idle, root.foregroundPlaybackState.value)
+    }
+
+    @Test
+    fun manualNextAndPreviousStopAtForegroundOnlyTarget() = runTest {
+        val c = ControlledCoordinator()
+        val a = item("direct", "a")
+        val b = item("provider", "b")
+        val last = item("direct", "c")
+        c.enqueue(a); c.enqueue(b); c.enqueue(last); c.enqueue(b)
+        var boundaryStops = 0
+        val root = root(c, onForegroundPlaybackRequired = { boundaryStops++ })
+
+        root.playAll(listOf(a, b, last)); advanceUntilIdle(); c.completeDirectAudio(a); advanceUntilIdle()
+        root.navigateBack(); root.queueNext(); advanceUntilIdle(); c.complete(b); advanceUntilIdle()
+        assertEquals(b.reference, root.playbackQueue.value.current?.reference)
+        assertIs<ForegroundPlaybackState.Required>(root.foregroundPlaybackState.value)
+
+        root.openPendingForegroundPlayback(); root.queueNext(); advanceUntilIdle(); c.completeDirectAudio(last); advanceUntilIdle()
+        root.navigateBack(); root.queuePrevious(); advanceUntilIdle(); c.complete(b); advanceUntilIdle()
+
+        assertEquals(b.reference, root.playbackQueue.value.current?.reference)
+        assertIs<ForegroundPlaybackState.Required>(root.foregroundPlaybackState.value)
+        assertEquals(2, boundaryStops)
+        assertEquals(listOf(a.reference, b.reference, last.reference, b.reference), c.requests.map { it.reference })
+    }
+
+    @Test
+    fun stopClearsPendingForegroundTargetAndAttachCannotOpenIt() = runTest {
+        val c = ControlledCoordinator(); val a = item("direct", "a"); val b = item("provider", "b")
+        c.enqueue(a); c.enqueue(b)
+        var explicitStops = 0
+        val root = root(c, onStopPlayback = { explicitStops++ })
+        root.playAll(listOf(a, b)); advanceUntilIdle(); c.completeDirectAudio(a); advanceUntilIdle()
+        root.navigateBack(); root.queueNext(); advanceUntilIdle(); c.complete(b); advanceUntilIdle()
+
+        root.stopPlayback()
+        root.openPendingForegroundPlayback()
+
+        assertFalse(root.playbackQueue.value.isActive)
+        assertEquals(ForegroundPlaybackState.Idle, root.foregroundPlaybackState.value)
+        assertEquals(Configuration.Home, root.childStack.value.active.configuration)
+        assertEquals(1, explicitStops)
+    }
+
+    @Test
+    fun supersededPendingTargetCannotOpen() = runTest {
+        val c = ControlledCoordinator(); val a = item("direct", "a"); val b = item("provider", "b"); val last = item("direct", "c")
+        c.enqueue(a); c.enqueue(b); c.enqueue(last)
+        val root = root(c)
+        root.playAll(listOf(a, b, last)); advanceUntilIdle(); c.completeDirectAudio(a); advanceUntilIdle()
+        root.navigateBack(); root.queueNext(); advanceUntilIdle(); c.complete(b); advanceUntilIdle()
+
+        root.queueNext(); advanceUntilIdle(); c.completeDirectAudio(last); advanceUntilIdle()
+        root.openPendingForegroundPlayback()
+
+        assertEquals("c", player(root).externalId)
+        assertEquals(2, root.playbackQueue.value.currentIndex)
+        assertEquals(ForegroundPlaybackState.Idle, root.foregroundPlaybackState.value)
+    }
+
+    @Test
+    fun standaloneOpenInvalidatesPendingQueueTarget() = runTest {
+        val c = ControlledCoordinator(); val a = item("direct", "a"); val b = item("provider", "b"); val x = item("provider", "x")
+        c.enqueue(a); c.enqueue(b); c.enqueue(x)
+        val root = root(c)
+        root.playAll(listOf(a, b)); advanceUntilIdle(); c.completeDirectAudio(a); advanceUntilIdle()
+        root.navigateBack(); root.queueNext(); advanceUntilIdle(); c.complete(b); advanceUntilIdle()
+
+        root.openMedia(x); advanceUntilIdle(); c.complete(x); advanceUntilIdle()
+        root.openPendingForegroundPlayback()
+
+        assertFalse(root.playbackQueue.value.isActive)
+        assertEquals("x", player(root).externalId)
+        assertEquals(ForegroundPlaybackState.Idle, root.foregroundPlaybackState.value)
+    }
+
+    @Test
+    fun finalForegroundOnlyQueueTargetDoesNotExhaustQueue() = runTest {
+        val c = ControlledCoordinator(); val a = item("direct", "a"); val b = item("provider", "b")
+        c.enqueue(a); c.enqueue(b)
+        val root = root(c)
+        root.playAll(listOf(a, b)); advanceUntilIdle(); c.completeDirectAudio(a); advanceUntilIdle()
+        root.navigateBack(); root.onQueueItemCompleted(a.reference); advanceUntilIdle(); c.complete(b); advanceUntilIdle()
+
+        assertTrue(root.playbackQueue.value.isActive)
+        assertEquals(1, root.playbackQueue.value.currentIndex)
+        assertEquals(b.reference, assertIs<ForegroundPlaybackState.Required>(root.foregroundPlaybackState.value).item.reference)
+    }
+
+    private fun TestScope.root(
+        coordinator: ControlledCoordinator,
+        onForegroundPlaybackRequired: suspend () -> Unit = {},
+        onStopPlayback: () -> Unit = {},
+    ): DefaultRootComponent<Any> = DefaultRootComponent(
         componentContext = DefaultComponentContext(LifecycleRegistry().also { it.onCreate() }),
         initialConfiguration = Configuration.Home,
         searchComponentFactory = { Any() },
         mediaOpenCoordinator = coordinator,
-        coroutineContext = StandardTestDispatcher(testScheduler)
+        coroutineContext = StandardTestDispatcher(testScheduler),
+        canRetainEligibleDirectSession = { true },
+        onForegroundPlaybackRequired = onForegroundPlaybackRequired,
+        onStopPlayback = onStopPlayback,
     )
 
     private fun player(root: DefaultRootComponent<Any>) =
@@ -428,6 +649,24 @@ class RootComponentMediaOpeningTest {
         fun complete(item: MediaCatalogItem) {
             pending[item.reference]?.firstOrNull { !it.isCompleted }?.complete(playerResult(item))
                 ?: error("No pending result for ${item.reference}")
+        }
+
+        fun completeDirectAudio(item: MediaCatalogItem) = completeWith(item, "audio/mpeg")
+        fun completeDirectVideo(item: MediaCatalogItem) = completeWith(item, "video/mp4")
+
+        private fun completeWith(item: MediaCatalogItem, mimeType: String) {
+            pending[item.reference]?.firstOrNull { !it.isCompleted }?.complete(
+                MediaOpenResult.Player(
+                    Configuration.Player(
+                        providerId = item.reference.provider.value,
+                        externalId = item.reference.externalId,
+                        title = item.title,
+                        playbackKind = "direct",
+                        directUri = "https://example.test/${item.reference.externalId}",
+                        mimeType = mimeType,
+                    )
+                )
+            ) ?: error("No pending result for ${item.reference}")
         }
 
         override suspend fun open(item: MediaCatalogItem): MediaOpenResult {

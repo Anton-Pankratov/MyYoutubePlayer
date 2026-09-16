@@ -43,6 +43,7 @@ class MainActivity : ComponentActivity() {
             mediaOpenCoordinator = get<MediaOpenCoordinator>(),
             canRetainEligibleDirectSession = { directAudioHost.capabilities.supportsBackgroundPlayback },
             onEligiblePlayerUiDetached = { directAudioHost.detachUi() },
+            onForegroundPlaybackRequired = directAudioCoordinator::stopForForegroundPlayback,
             onStopPlayback = directAudioCoordinator::stop,
             searchComponentFactory = { childContext ->
                 DefaultSearchComponent(childContext, get<SearchChannelsUseCase>(), onMediaSelected = root::openMedia)

@@ -17,3 +17,9 @@ sealed interface MediaOpenState {
     data class Resolving(val item: MediaCatalogItem) : MediaOpenState
     data class Failed(val item: MediaCatalogItem, val message: String, val retryable: Boolean) : MediaOpenState
 }
+
+/** A resolved queue target that can only start through the foreground Player surface. */
+sealed interface ForegroundPlaybackState {
+    data object Idle : ForegroundPlaybackState
+    data class Required(val item: MediaCatalogItem) : ForegroundPlaybackState
+}

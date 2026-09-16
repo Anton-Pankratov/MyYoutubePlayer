@@ -20,6 +20,7 @@ import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.Button
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationRail
@@ -46,6 +47,7 @@ import kg.dev.shared.core.ui.design.MediaTheme
 import kg.dev.shared.core.ui.design.layoutForWidth
 import kg.dev.shared.core.ui.navigation.Configuration
 import kg.dev.shared.core.ui.navigation.MediaOpenState
+import kg.dev.shared.core.ui.navigation.ForegroundPlaybackState
 import kg.dev.shared.core.ui.navigation.PlayerComponent
 import kg.dev.shared.core.ui.navigation.RootComponent
 import kg.dev.shared.feature.home.presentation.HomeComponent
@@ -81,6 +83,7 @@ fun SharedAppContent(
 ) {
     val stack by rootComponent.childStack.subscribeAsState()
     val mediaOpenState by rootComponent.mediaOpenState.subscribeAsState()
+    val foregroundPlaybackState by rootComponent.foregroundPlaybackState.subscribeAsState()
     val activeConfiguration = stack.active.configuration
     val destinations = listOf(
         Destination(Configuration.Home, "Home", Icons.Outlined.Home, rootComponent::showHome),
@@ -120,6 +123,28 @@ fun SharedAppContent(
                 }
             }
             MediaOpenOverlay(mediaOpenState, rootComponent::retryOpenMedia)
+            ForegroundPlaybackOverlay(foregroundPlaybackState, rootComponent::openPendingForegroundPlayback)
+        }
+    }
+}
+
+@Composable
+private fun BoxScope.ForegroundPlaybackOverlay(
+    state: ForegroundPlaybackState,
+    onOpen: () -> Unit,
+) {
+    if (state !is ForegroundPlaybackState.Required) return
+    Surface(
+        color = MediaTheme.colors.surface,
+        shape = kg.dev.shared.core.ui.design.MediaShapes.large,
+        modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(MediaSpacing.xl).widthIn(max = 520.dp),
+    ) {
+        androidx.compose.foundation.layout.Column(Modifier.padding(MediaSpacing.lg)) {
+            Text("Player required", style = MediaTheme.typography.sectionTitle)
+            Spacer(Modifier.height(MediaSpacing.sm))
+            Text("${state.item.title} is ready to open in the foreground.")
+            Spacer(Modifier.height(MediaSpacing.md))
+            Button(onClick = onOpen) { Text("Open player") }
         }
     }
 }

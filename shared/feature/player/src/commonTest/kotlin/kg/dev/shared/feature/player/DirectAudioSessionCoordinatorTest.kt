@@ -84,6 +84,20 @@ class DirectAudioSessionCoordinatorTest {
     }
 
     @Test
+    fun foregroundBoundaryStopsHostWithoutRewritingCompletedHistory() = runTest {
+        val fixture = fixture()
+        fixture.host.emit(state(media("a"), 1, PlaybackState.Playing, 9_000, 10_000))
+        fixture.host.emit(state(media("a"), 1, PlaybackState.Completed, 10_000, 10_000))
+        advanceUntilIdle()
+
+        fixture.coordinator.stopForForegroundPlayback()
+
+        assertEquals(1, fixture.host.stopCalls)
+        assertEquals(listOf(10_000L), fixture.history.saved.map { it.positionMs })
+        assertEquals(1, fixture.callbacks.completions)
+    }
+
+    @Test
     fun applicationCallbacksCanBeReplacedAndCleared() = runTest {
         val fixture = fixture(registerCallbacks = false)
         val old = RecordingCallbacks(fixture.events, "old")

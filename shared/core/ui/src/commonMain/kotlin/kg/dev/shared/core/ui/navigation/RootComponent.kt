@@ -26,6 +26,7 @@ interface RootComponent<SearchComponent : Any> {
     val childStack: Value<ChildStack<Configuration, Child<SearchComponent>>>
     val navigationState: Value<NavigationState>
     val mediaOpenState: Value<MediaOpenState>
+    val foregroundPlaybackState: Value<ForegroundPlaybackState>
     val playbackQueue: StateFlow<PlaybackQueueState>
 
     fun showHome()
@@ -36,6 +37,7 @@ interface RootComponent<SearchComponent : Any> {
     fun queuePrevious()
     fun onQueueItemCompleted(reference: kg.dev.shared.core.common.media.MediaReference)
     fun retryOpenMedia()
+    fun openPendingForegroundPlayback()
     fun stopPlayback()
     fun showProfile()
     fun navigateBack()
@@ -76,13 +78,23 @@ class DefaultRootComponent<SearchComponent : Any>(
         { context, configuration -> DefaultPlayerComponent(context, configuration) },
     private val canRetainEligibleDirectSession: (Configuration.Player) -> Boolean = { false },
     private val onEligiblePlayerUiDetached: (Configuration.Player) -> Unit = {},
+    private val onForegroundPlaybackRequired: suspend () -> Unit = {},
     private val onStopPlayback: () -> Unit = {},
 ) : RootComponent<SearchComponent>, ComponentContext by componentContext {
+    private data class PendingForegroundPlayback(
+        val item: MediaCatalogItem,
+        val configuration: Configuration.Player,
+        val queueIndex: Int,
+        val queueGeneration: Long,
+    )
+
     // Decompose navigation creates lifecycle-bound children and must run on the UI thread.
     private val scope = CoroutineScope(SupervisorJob() + coroutineContext)
     private var openJob: Job? = null
     private var openGeneration = 0L
     private var queueTransition = false
+    private var foregroundPlayerAvailable = true
+    private var pendingForegroundPlayback: PendingForegroundPlayback? = null
     private lateinit var queueController: PlaybackQueueController
     private val navigation = StackNavigation<Configuration>()
 
@@ -100,12 +112,19 @@ class DefaultRootComponent<SearchComponent : Any>(
     override val navigationState: Value<NavigationState> = mutableNavigationState
     private val mutableMediaOpenState = MutableValue<MediaOpenState>(MediaOpenState.Idle)
     override val mediaOpenState: Value<MediaOpenState> = mutableMediaOpenState
+    private val mutableForegroundPlaybackState = MutableValue<ForegroundPlaybackState>(ForegroundPlaybackState.Idle)
+    override val foregroundPlaybackState: Value<ForegroundPlaybackState> = mutableForegroundPlaybackState
     override val playbackQueue: StateFlow<PlaybackQueueState>
 
     init {
         queueController = PlaybackQueueController(::openQueueCandidate)
         playbackQueue = queueController.state
         lifecycle.subscribe(object : com.arkivanov.essenty.lifecycle.Lifecycle.Callbacks {
+            override fun onStart() {
+                foregroundPlayerAvailable = true
+                openPendingForegroundPlayback()
+            }
+            override fun onStop() { foregroundPlayerAvailable = false }
             override fun onDestroy() { openJob?.cancel(); scope.cancel() }
         })
         childStack.subscribe { stack ->
@@ -121,6 +140,8 @@ class DefaultRootComponent<SearchComponent : Any>(
     override fun showProfile() = navigation.bringToFront(Configuration.Profile)
 
     override fun openMedia(media: MediaCatalogItem, startPositionMs: Long) {
+        invalidatePendingForegroundPlayback()
+        foregroundPlayerAvailable = true
         queueController.clear()
         openStandaloneMedia(media, startPositionMs)
     }
@@ -143,23 +164,53 @@ class DefaultRootComponent<SearchComponent : Any>(
         }
     }
 
-    override fun playAll(items: List<MediaCatalogItem>) = queueController.start(items)
+    override fun playAll(items: List<MediaCatalogItem>) {
+        invalidatePendingForegroundPlayback()
+        foregroundPlayerAvailable = true
+        queueController.start(items)
+    }
     override fun queueNext() = queueController.next()
     override fun queuePrevious() = queueController.previous()
     override fun onQueueItemCompleted(reference: kg.dev.shared.core.common.media.MediaReference) = queueController.onCompleted(reference)
 
     private fun openQueueCandidate(index: Int, queueGeneration: Long) {
         val media = queueController.state.value.items.getOrNull(index) ?: return
+        invalidatePendingForegroundPlayback()
         val generation = ++openGeneration
         openJob?.cancel()
         openJob = scope.launch {
             mutableMediaOpenState.value = MediaOpenState.Resolving(media)
             when (val result = mediaOpenCoordinator.open(media)) {
                 is MediaOpenResult.Player -> {
-                    if (generation != openGeneration || !queueController.settle(index, queueGeneration)) return@launch
+                    if (generation != openGeneration) return@launch
+                    val configuration = result.configuration.copy(startPositionMs = 0)
+                    if (!configuration.isDirectBackgroundEligible()) {
+                        if (!queueController.settle(index, queueGeneration)) return@launch
+                        onForegroundPlaybackRequired()
+                        val queue = queueController.state.value
+                        if (
+                            generation != openGeneration ||
+                            queue.generation != queueGeneration ||
+                            queue.currentIndex != index ||
+                            queue.current?.reference != media.reference
+                        ) return@launch
+                        mutableMediaOpenState.value = MediaOpenState.Idle
+                        if (foregroundPlayerAvailable) {
+                            openQueuePlayer(configuration)
+                        } else {
+                            pendingForegroundPlayback = PendingForegroundPlayback(
+                                item = media,
+                                configuration = configuration,
+                                queueIndex = index,
+                                queueGeneration = queueGeneration,
+                            )
+                            mutableForegroundPlaybackState.value = ForegroundPlaybackState.Required(media)
+                        }
+                        return@launch
+                    }
+                    if (!queueController.settle(index, queueGeneration)) return@launch
                     mutableMediaOpenState.value = MediaOpenState.Idle
-                    if (queueTransition) navigation.replaceCurrent(result.configuration.copy(startPositionMs = 0))
-                    else { queueTransition = true; navigation.pushNew(result.configuration.copy(startPositionMs = 0)) }
+                    openQueuePlayer(configuration)
                 }
                 is MediaOpenResult.Failure -> if (generation == openGeneration) {
                     if (result.retryable) mutableMediaOpenState.value = MediaOpenState.Failed(media, result.message, true)
@@ -177,7 +228,28 @@ class DefaultRootComponent<SearchComponent : Any>(
         (mutableMediaOpenState.value as? MediaOpenState.Failed)?.let { openMedia(it.item) }
     }
 
+    override fun openPendingForegroundPlayback() {
+        val pending = pendingForegroundPlayback ?: return
+        val queue = queueController.state.value
+        if (
+            queue.generation != pending.queueGeneration ||
+            queue.currentIndex != pending.queueIndex ||
+            queue.current?.reference != pending.item.reference
+        ) {
+            invalidatePendingForegroundPlayback()
+            return
+        }
+        pendingForegroundPlayback = null
+        mutableForegroundPlaybackState.value = ForegroundPlaybackState.Idle
+        foregroundPlayerAvailable = true
+        openQueuePlayer(pending.configuration)
+    }
+
     override fun stopPlayback() {
+        ++openGeneration
+        openJob?.cancel()
+        invalidatePendingForegroundPlayback()
+        foregroundPlayerAvailable = true
         onStopPlayback()
         queueController.clear()
         if (childStack.value.active.configuration is Configuration.Player) navigation.pop()
@@ -187,11 +259,26 @@ class DefaultRootComponent<SearchComponent : Any>(
         val player = childStack.value.active.configuration as? Configuration.Player
         if (player != null) {
             if (player.isDirectBackgroundEligible() && canRetainEligibleDirectSession(player)) {
+                foregroundPlayerAvailable = false
                 onEligiblePlayerUiDetached(player)
             }
             else queueController.clear()
         }
         navigation.pop()
+    }
+
+    private fun openQueuePlayer(configuration: Configuration.Player) {
+        if (queueTransition && childStack.value.active.configuration is Configuration.Player) {
+            navigation.replaceCurrent(configuration)
+        } else {
+            queueTransition = true
+            navigation.pushNew(configuration)
+        }
+    }
+
+    private fun invalidatePendingForegroundPlayback() {
+        pendingForegroundPlayback = null
+        mutableForegroundPlaybackState.value = ForegroundPlaybackState.Idle
     }
 
     private fun createChild(
