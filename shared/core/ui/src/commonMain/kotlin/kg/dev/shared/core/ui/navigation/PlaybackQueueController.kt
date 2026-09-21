@@ -14,10 +14,18 @@ data class PlaybackQueueState(
 ) {
     val isActive get() = items.isNotEmpty()
     val current get() = currentIndex?.let(items::getOrNull)
-    val previousItems get() = currentIndex?.let { items.take(it) }.orEmpty()
-    val upcomingItems get() = currentIndex?.let { items.drop(it + 1) }.orEmpty()
-    val hasPrevious get() = (currentIndex ?: 0) > 0
-    val hasNext get() = (currentIndex ?: -1) < items.lastIndex
+    /**
+     * The Root-requested target for presentation while a queue candidate is resolving.  The
+     * settled [currentIndex] deliberately remains unchanged until resolution succeeds so a
+     * retryable failure can preserve the active playback session; UI must nevertheless show the
+     * logical target selected by Next, Previous, or completion traversal.
+     */
+    val logicalCurrentIndex get() = pendingIndex ?: currentIndex
+    val logicalCurrent get() = logicalCurrentIndex?.let(items::getOrNull)
+    val previousItems get() = logicalCurrentIndex?.let { items.take(it) }.orEmpty()
+    val upcomingItems get() = logicalCurrentIndex?.let { items.drop(it + 1) }.orEmpty()
+    val hasPrevious get() = (logicalCurrentIndex ?: 0) > 0
+    val hasNext get() = (logicalCurrentIndex ?: -1) < items.lastIndex
 }
 
 /** Root-lifetime, session-only queue state. Resolution remains owned by [DefaultRootComponent]. */

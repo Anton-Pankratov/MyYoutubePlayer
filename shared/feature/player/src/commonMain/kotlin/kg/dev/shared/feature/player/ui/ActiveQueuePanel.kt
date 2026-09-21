@@ -35,7 +35,7 @@ internal data class ActiveQueueRow(
 )
 
 internal fun PlaybackQueueState.activeQueueRows(): List<ActiveQueueRow> =
-    items.indices.map { index -> ActiveQueueRow(index = index, isCurrent = index == currentIndex) }
+    items.indices.map { index -> ActiveQueueRow(index = index, isCurrent = index == logicalCurrentIndex) }
 
 /** Shared, presentation-only view of Root's immutable active queue snapshot. */
 @Composable
@@ -45,7 +45,7 @@ internal fun ActiveQueuePanel(
     onSelect: (Int) -> Unit,
 ) {
     val listState = rememberLazyListState()
-    val currentIndex = queue.currentIndex
+    val currentIndex = queue.logicalCurrentIndex
     val rows = queue.activeQueueRows()
     LaunchedEffect(queue.generation, currentIndex) {
         currentIndex?.let { listState.scrollToItem(it) }

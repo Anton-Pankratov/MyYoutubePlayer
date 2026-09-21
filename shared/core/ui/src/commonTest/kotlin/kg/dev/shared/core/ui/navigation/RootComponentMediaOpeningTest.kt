@@ -763,6 +763,66 @@ class RootComponentMediaOpeningTest {
         assertEquals(listOf(a.reference, b.reference, last.reference), c.requests.map { it.reference })
     }
 
+    @Test
+    fun systemNextAndPreviousExposePendingLogicalTargetToQueueObservers() = runTest {
+        val c = ControlledCoordinator()
+        val a = item("direct", "a")
+        val b = item("direct", "b")
+        val cItem = item("direct", "c")
+        c.enqueue(a); c.enqueue(b); c.enqueue(a)
+        val root = root(c)
+
+        root.playAll(listOf(a, b, cItem)); advanceUntilIdle(); c.completeDirectAudio(a); advanceUntilIdle()
+        root.queueNext(); advanceUntilIdle()
+        assertEquals(0, root.playbackQueue.value.currentIndex)
+        assertEquals(1, root.playbackQueue.value.logicalCurrentIndex)
+        assertEquals(b.reference, root.playbackQueue.value.logicalCurrent?.reference)
+
+        c.completeDirectAudio(b); advanceUntilIdle()
+        root.queuePrevious(); advanceUntilIdle()
+        assertEquals(1, root.playbackQueue.value.currentIndex)
+        assertEquals(0, root.playbackQueue.value.logicalCurrentIndex)
+        assertEquals(a.reference, root.playbackQueue.value.logicalCurrent?.reference)
+    }
+
+    @Test
+    fun naturalCompletionExposesNextLogicalTargetBeforeItsResolutionSettles() = runTest {
+        val c = ControlledCoordinator()
+        val a = item("direct", "a")
+        val b = item("direct", "b")
+        c.enqueue(a); c.enqueue(b)
+        val root = root(c)
+
+        root.playAll(listOf(a, b)); advanceUntilIdle(); c.completeDirectAudio(a); advanceUntilIdle()
+        root.onQueueItemCompleted(a.reference); advanceUntilIdle()
+
+        assertEquals(0, root.playbackQueue.value.currentIndex)
+        assertEquals(1, root.playbackQueue.value.logicalCurrentIndex)
+        assertEquals(b.reference, root.playbackQueue.value.logicalCurrent?.reference)
+        c.completeDirectAudio(b); advanceUntilIdle()
+        assertEquals(1, root.playbackQueue.value.currentIndex)
+    }
+
+    @Test
+    fun nonRetryableSkipAndRetryableFailureExposeExpectedLogicalQueueTarget() = runTest {
+        val c = ControlledCoordinator()
+        val a = item("direct", "a")
+        val unavailable = item("provider", "b")
+        val retryable = item("provider", "c")
+        val last = item("direct", "d")
+        c.enqueue(a); c.enqueue(unavailable, MediaOpenResult.Failure("gone", retryable = false)); c.enqueue(retryable, MediaOpenResult.Failure("retry", retryable = true)); c.enqueue(last)
+        val root = root(c)
+
+        root.playAll(listOf(a, unavailable, retryable, last)); advanceUntilIdle(); c.completeDirectAudio(a); advanceUntilIdle()
+        root.queueNext(); advanceUntilIdle()
+        assertEquals(2, root.playbackQueue.value.logicalCurrentIndex)
+        assertEquals(retryable.reference, root.playbackQueue.value.logicalCurrent?.reference)
+
+        root.queueNext(); advanceUntilIdle()
+        assertEquals(3, root.playbackQueue.value.logicalCurrentIndex)
+        assertEquals(last.reference, root.playbackQueue.value.logicalCurrent?.reference)
+    }
+
     private fun TestScope.root(
         coordinator: ControlledCoordinator,
         onForegroundPlaybackRequired: suspend () -> Unit = {},

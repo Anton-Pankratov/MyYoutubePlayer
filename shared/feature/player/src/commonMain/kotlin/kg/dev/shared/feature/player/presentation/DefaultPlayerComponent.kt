@@ -98,7 +98,7 @@ class DefaultPlayerComponent(
         playbackQueue?.let { queue -> scope.launch {
             queue.collect { value ->
                 mutableQueueControls.value = value.current?.takeIf { it.reference == media.catalogItem.reference }?.let {
-                    QueueControls(value.currentIndex ?: 0, value.items.size, value.hasPrevious, value.hasNext)
+                    QueueControls(value.logicalCurrentIndex ?: 0, value.items.size, value.hasPrevious, value.hasNext)
                 }
             }
         } }

@@ -89,6 +89,42 @@ class PlaybackQueueControllerTest {
         assertEquals(0, queue.state.value.pendingIndex)
     }
 
+    @Test fun pendingTraversalIsExposedAsLogicalCurrentWithoutReplacingSettledItem() {
+        val requests = mutableListOf<Pair<Int, Long>>()
+        val queue = PlaybackQueueController { index, generation -> requests += index to generation }
+        queue.start(items("a", "b", "c"))
+        val generation = queue.state.value.generation
+        queue.settle(0, generation)
+
+        queue.next()
+
+        assertEquals(0, queue.state.value.currentIndex)
+        assertEquals(1, queue.state.value.pendingIndex)
+        assertEquals(1, queue.state.value.logicalCurrentIndex)
+        assertEquals("b", queue.state.value.logicalCurrent?.reference?.externalId)
+        assertEquals(listOf("a"), queue.state.value.previousItems.map { it.reference.externalId })
+        assertEquals(listOf("c"), queue.state.value.upcomingItems.map { it.reference.externalId })
+        assertTrue(queue.state.value.hasPrevious)
+        assertTrue(queue.state.value.hasNext)
+    }
+
+    @Test fun duplicateReferencesRemainSelectableBySnapshotIndex() {
+        val queue = PlaybackQueueController { _, _ -> }
+        val duplicate = MediaReference(MediaProviderId("youtube"), "same")
+        queue.start(
+            listOf(
+                MediaCatalogItem(duplicate, "first"),
+                MediaCatalogItem(duplicate, "second"),
+            )
+        )
+        val generation = queue.state.value.generation
+        queue.settle(0, generation)
+
+        assertTrue(queue.select(1))
+        assertEquals(1, queue.state.value.currentIndex)
+        assertEquals(duplicate, queue.state.value.current?.reference)
+    }
+
     private fun items(vararg ids: String) = ids.map { id ->
         MediaCatalogItem(MediaReference(MediaProviderId("youtube"), id), id)
     }
