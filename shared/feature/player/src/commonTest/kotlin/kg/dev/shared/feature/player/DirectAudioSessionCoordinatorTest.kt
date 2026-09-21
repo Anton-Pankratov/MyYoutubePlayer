@@ -139,6 +139,18 @@ class DirectAudioSessionCoordinatorTest {
     }
 
     @Test
+    fun queueSelectionPersistsCurrentProgressWithoutCompletingIt() = runTest {
+        val fixture = fixture()
+        fixture.host.emit(state(media("a"), 1, PlaybackState.Playing, 42_000, 100_000))
+        advanceUntilIdle()
+
+        fixture.coordinator.persistProgressForQueueSelection()
+
+        assertEquals(listOf("history-progress:a:42000"), fixture.events)
+        assertEquals(0, fixture.callbacks.completions)
+    }
+
+    @Test
     fun pauseTransitionPersistsProgressOnlyOnce() = runTest {
         val fixture = fixture()
         fixture.host.emit(state(media("a"), 1, PlaybackState.Playing, 3_000, 10_000))

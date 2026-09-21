@@ -65,6 +65,7 @@ fun MainViewController(youtubeApiKey: String): UIViewController {
         canRetainEligibleDirectSession = { directAudioHost.capabilities.supportsBackgroundPlayback },
         onEligiblePlayerUiDetached = { directAudioHost.detachUi() },
         onForegroundPlaybackRequired = directAudioCoordinator::stopForForegroundPlayback,
+        onBeforeQueueSelection = directAudioCoordinator::persistProgressForQueueSelection,
         onStopPlayback = directAudioCoordinator::stop,
         searchComponentFactory = { childContext -> DefaultSearchComponent(childContext, koin.get<SearchChannelsUseCase>(), onMediaSelected = rootComponent::openMedia) },
         playerComponentFactory = { childContext, configuration ->

@@ -617,6 +617,152 @@ class RootComponentMediaOpeningTest {
         assertEquals(b.reference, assertIs<ForegroundPlaybackState.Required>(root.foregroundPlaybackState.value).item.reference)
     }
 
+    @Test
+    fun selectQueueItemOpensSelectedSnapshotTargetAndSkipsIntermediateItems() = runTest {
+        val c = ControlledCoordinator()
+        val a = item("direct", "a")
+        val b = item("provider", "b")
+        val target = item("direct", "c")
+        c.enqueue(a); c.enqueue(target)
+        val root = root(c)
+
+        root.playAll(listOf(a, b, target)); advanceUntilIdle(); c.complete(a); advanceUntilIdle()
+        root.selectQueueItem(2); advanceUntilIdle()
+        root.onQueueItemCompleted(a.reference)
+        c.complete(target); advanceUntilIdle()
+
+        assertEquals(listOf(a.reference, target.reference), c.requests.map { it.reference })
+        assertEquals(2, root.playbackQueue.value.currentIndex)
+        assertEquals(target.reference, root.playbackQueue.value.current?.reference)
+        assertEquals("c", player(root).externalId)
+    }
+
+    @Test
+    fun secondQueueSelectionWinsOverFirstPendingSelection() = runTest {
+        val c = ControlledCoordinator()
+        val a = item("direct", "a")
+        val b = item("provider", "b")
+        val target = item("direct", "c")
+        c.enqueue(a); c.enqueue(b); c.enqueue(target)
+        val root = root(c)
+
+        root.playAll(listOf(a, b, target)); advanceUntilIdle(); c.complete(a); advanceUntilIdle()
+        root.selectQueueItem(1); advanceUntilIdle()
+        root.selectQueueItem(2); advanceUntilIdle()
+        c.complete(b)
+        c.complete(target); advanceUntilIdle()
+
+        assertEquals(2, root.playbackQueue.value.currentIndex)
+        assertEquals("c", player(root).externalId)
+        assertEquals(ForegroundPlaybackState.Idle, root.foregroundPlaybackState.value)
+    }
+
+    @Test
+    fun stopAndStandaloneOpenInvalidatePendingQueueSelection() = runTest {
+        val c = ControlledCoordinator()
+        val a = item("direct", "a")
+        val b = item("provider", "b")
+        val x = item("direct", "x")
+        c.enqueue(a); c.enqueue(b); c.enqueue(x)
+        val root = root(c)
+
+        root.playAll(listOf(a, b)); advanceUntilIdle(); c.complete(a); advanceUntilIdle()
+        root.selectQueueItem(1); advanceUntilIdle()
+        root.stopPlayback(); c.complete(b); advanceUntilIdle()
+        assertFalse(root.playbackQueue.value.isActive)
+        assertEquals(Configuration.Home, root.childStack.value.active.configuration)
+
+        c.enqueue(a); c.enqueue(b)
+        root.playAll(listOf(a, b)); advanceUntilIdle(); c.complete(a); advanceUntilIdle()
+        root.selectQueueItem(1); advanceUntilIdle()
+        root.openMedia(x); advanceUntilIdle(); c.complete(x); c.complete(b); advanceUntilIdle()
+
+        assertFalse(root.playbackQueue.value.isActive)
+        assertEquals("x", player(root).externalId)
+    }
+
+    @Test
+    fun detachedQueueSelectionUsesExistingForegroundBoundary() = runTest {
+        val c = ControlledCoordinator()
+        val a = item("direct", "a")
+        val provider = item("provider", "b")
+        val video = item("direct", "video")
+        val audio = item("direct", "audio")
+        c.enqueue(a); c.enqueue(provider); c.enqueue(video); c.enqueue(audio)
+        var boundaryStops = 0
+        val root = root(c, onForegroundPlaybackRequired = { boundaryStops++ })
+
+        root.playAll(listOf(a, provider, video, audio)); advanceUntilIdle(); c.completeDirectAudio(a); advanceUntilIdle()
+        root.navigateBack()
+        root.selectQueueItem(1); advanceUntilIdle(); c.complete(provider); advanceUntilIdle()
+        assertEquals(provider.reference, assertIs<ForegroundPlaybackState.Required>(root.foregroundPlaybackState.value).item.reference)
+
+        root.selectQueueItem(2); advanceUntilIdle(); c.completeDirectVideo(video); advanceUntilIdle()
+        assertEquals(video.reference, assertIs<ForegroundPlaybackState.Required>(root.foregroundPlaybackState.value).item.reference)
+
+        root.selectQueueItem(3); advanceUntilIdle(); c.completeDirectAudio(audio); advanceUntilIdle()
+        assertEquals("audio", player(root).externalId)
+        assertEquals(ForegroundPlaybackState.Idle, root.foregroundPlaybackState.value)
+        assertEquals(2, boundaryStops)
+    }
+
+    @Test
+    fun foregroundRestoreOpensSelectedPendingTargetExactlyOnce() = runTest {
+        val c = ControlledCoordinator()
+        val a = item("direct", "a")
+        val b = item("provider", "b")
+        val target = item("direct", "video")
+        c.enqueue(a); c.enqueue(b); c.enqueue(target)
+        val root = root(c)
+
+        root.playAll(listOf(a, b, target)); advanceUntilIdle(); c.completeDirectAudio(a); advanceUntilIdle()
+        root.navigateBack()
+        root.selectQueueItem(1); advanceUntilIdle(); c.complete(b); advanceUntilIdle()
+        root.selectQueueItem(2); advanceUntilIdle(); c.completeDirectVideo(target); advanceUntilIdle()
+        root.openPendingForegroundPlayback()
+        root.openPendingForegroundPlayback()
+
+        assertEquals("video", player(root).externalId)
+        assertEquals(2, root.playbackQueue.value.currentIndex)
+        assertEquals(ForegroundPlaybackState.Idle, root.foregroundPlaybackState.value)
+        assertEquals(listOf(a.reference, b.reference, target.reference), c.requests.map { it.reference })
+    }
+
+    @Test
+    fun selectedRetryableFailureRemainsCurrentWithoutSkipping() = runTest {
+        val c = ControlledCoordinator()
+        val a = item("direct", "a")
+        val b = item("provider", "b")
+        val last = item("direct", "c")
+        c.enqueue(a); c.enqueue(b, MediaOpenResult.Failure("retry", retryable = true))
+        val root = root(c)
+
+        root.playAll(listOf(a, b, last)); advanceUntilIdle(); c.complete(a); advanceUntilIdle()
+        root.selectQueueItem(1); advanceUntilIdle()
+
+        assertEquals(1, root.playbackQueue.value.currentIndex)
+        assertNull(root.playbackQueue.value.pendingIndex)
+        assertIs<MediaOpenState.Failed>(root.mediaOpenState.value)
+        assertEquals(listOf(a.reference, b.reference), c.requests.map { it.reference })
+    }
+
+    @Test
+    fun selectedNonRetryableFailureUsesExistingDirectionalSkip() = runTest {
+        val c = ControlledCoordinator()
+        val a = item("direct", "a")
+        val b = item("provider", "b")
+        val last = item("direct", "c")
+        c.enqueue(a); c.enqueue(b, MediaOpenResult.Failure("gone", retryable = false)); c.enqueue(last)
+        val root = root(c)
+
+        root.playAll(listOf(a, b, last)); advanceUntilIdle(); c.complete(a); advanceUntilIdle()
+        root.selectQueueItem(1); advanceUntilIdle(); c.complete(last); advanceUntilIdle()
+
+        assertEquals(2, root.playbackQueue.value.currentIndex)
+        assertEquals("c", player(root).externalId)
+        assertEquals(listOf(a.reference, b.reference, last.reference), c.requests.map { it.reference })
+    }
+
     private fun TestScope.root(
         coordinator: ControlledCoordinator,
         onForegroundPlaybackRequired: suspend () -> Unit = {},

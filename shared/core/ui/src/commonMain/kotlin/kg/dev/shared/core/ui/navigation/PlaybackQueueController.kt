@@ -14,6 +14,8 @@ data class PlaybackQueueState(
 ) {
     val isActive get() = items.isNotEmpty()
     val current get() = currentIndex?.let(items::getOrNull)
+    val previousItems get() = currentIndex?.let { items.take(it) }.orEmpty()
+    val upcomingItems get() = currentIndex?.let { items.drop(it + 1) }.orEmpty()
     val hasPrevious get() = (currentIndex ?: 0) > 0
     val hasNext get() = (currentIndex ?: -1) < items.lastIndex
 }
@@ -33,6 +35,19 @@ class PlaybackQueueController(private val request: (index: Int, generation: Long
     fun clear() { mutableState.value = PlaybackQueueState(generation = mutableState.value.generation + 1) }
     fun next() = requestForward((mutableState.value.pendingIndex ?: mutableState.value.currentIndex ?: -1) + 1)
     fun previous() = requestBackward((mutableState.value.pendingIndex ?: mutableState.value.currentIndex ?: 0) - 1)
+
+    /**
+     * Makes an existing snapshot entry the logical queue target. Resolution and navigation remain
+     * Root responsibilities, so this deliberately does not invoke [request].
+     */
+    fun select(index: Int): Boolean {
+        val state = mutableState.value
+        if (state.items.getOrNull(index) == null) return false
+        if (state.currentIndex == index && state.pendingIndex == null) return false
+        mutableState.value = state.copy(currentIndex = index, pendingIndex = null)
+        return true
+    }
+
     fun onCompleted(reference: MediaReference) {
         val current = mutableState.value.current ?: return
         if (current.reference != reference) return

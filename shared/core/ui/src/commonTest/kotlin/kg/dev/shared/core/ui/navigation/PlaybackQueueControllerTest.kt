@@ -50,6 +50,45 @@ class PlaybackQueueControllerTest {
         assertEquals(null, queue.state.value.pendingIndex)
     }
 
+    @Test fun activeQueueStateReflectsSnapshotAndCurrentIndex() {
+        val queue = PlaybackQueueController { _, _ -> }
+        val snapshot = items("a", "b", "c")
+        queue.start(snapshot)
+        val generation = queue.state.value.generation
+        queue.settle(1, generation)
+
+        assertEquals(snapshot.map { it.reference }, queue.state.value.items.map { it.reference })
+        assertEquals("b", queue.state.value.current?.reference?.externalId)
+        assertEquals(listOf("a"), queue.state.value.previousItems.map { it.reference.externalId })
+        assertEquals(listOf("c"), queue.state.value.upcomingItems.map { it.reference.externalId })
+    }
+
+    @Test fun selectChangesCurrentIndexWithoutRebuildingSnapshot() {
+        val queue = PlaybackQueueController { _, _ -> }
+        val snapshot = items("a", "b", "c")
+        queue.start(snapshot)
+        val generation = queue.state.value.generation
+        queue.settle(1, generation)
+
+        assertTrue(queue.select(0))
+        assertEquals(0, queue.state.value.currentIndex)
+        assertEquals(snapshot.map { it.reference }, queue.state.value.items.map { it.reference })
+
+        assertTrue(queue.select(2))
+        assertEquals(2, queue.state.value.currentIndex)
+        assertFalse(queue.select(2))
+    }
+
+    @Test fun selectRejectsOutOfBoundsIndex() {
+        val queue = PlaybackQueueController { _, _ -> }
+        queue.start(items("a"))
+
+        assertFalse(queue.select(-1))
+        assertFalse(queue.select(1))
+        assertEquals(null, queue.state.value.currentIndex)
+        assertEquals(0, queue.state.value.pendingIndex)
+    }
+
     private fun items(vararg ids: String) = ids.map { id ->
         MediaCatalogItem(MediaReference(MediaProviderId("youtube"), id), id)
     }

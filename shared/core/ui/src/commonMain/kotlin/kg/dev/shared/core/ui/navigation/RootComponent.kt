@@ -35,6 +35,7 @@ interface RootComponent<SearchComponent : Any> {
     fun playAll(items: List<MediaCatalogItem>)
     fun queueNext()
     fun queuePrevious()
+    fun selectQueueItem(index: Int)
     fun onQueueItemCompleted(reference: kg.dev.shared.core.common.media.MediaReference)
     fun retryOpenMedia()
     fun openPendingForegroundPlayback()
@@ -79,6 +80,7 @@ class DefaultRootComponent<SearchComponent : Any>(
     private val canRetainEligibleDirectSession: (Configuration.Player) -> Boolean = { false },
     private val onEligiblePlayerUiDetached: (Configuration.Player) -> Unit = {},
     private val onForegroundPlaybackRequired: suspend () -> Unit = {},
+    private val onBeforeQueueSelection: suspend () -> Unit = {},
     private val onStopPlayback: () -> Unit = {},
 ) : RootComponent<SearchComponent>, ComponentContext by componentContext {
     private data class PendingForegroundPlayback(
@@ -173,53 +175,92 @@ class DefaultRootComponent<SearchComponent : Any>(
     override fun queuePrevious() = queueController.previous()
     override fun onQueueItemCompleted(reference: kg.dev.shared.core.common.media.MediaReference) = queueController.onCompleted(reference)
 
+    override fun selectQueueItem(index: Int) {
+        val beforeSelection = queueController.state.value
+        val item = beforeSelection.items.getOrNull(index) ?: return
+        val queueGeneration = beforeSelection.generation
+        val unavailableForward = index > (beforeSelection.currentIndex ?: index)
+        if (!queueController.select(index)) return
+
+        invalidatePendingForegroundPlayback()
+        val generation = ++openGeneration
+        openJob?.cancel()
+        if (beforeSelection.currentIndex == index) {
+            mutableMediaOpenState.value = MediaOpenState.Idle
+            return
+        }
+        openJob = scope.launch {
+            onBeforeQueueSelection()
+            val queue = queueController.state.value
+            if (
+                generation != openGeneration ||
+                queue.generation != queueGeneration ||
+                queue.currentIndex != index ||
+                queue.current?.reference != item.reference
+            ) return@launch
+            resolveQueueCandidate(item, index, queueGeneration, unavailableForward, generation)
+        }
+    }
+
     private fun openQueueCandidate(index: Int, queueGeneration: Long) {
         val media = queueController.state.value.items.getOrNull(index) ?: return
         invalidatePendingForegroundPlayback()
         val generation = ++openGeneration
         openJob?.cancel()
         openJob = scope.launch {
-            mutableMediaOpenState.value = MediaOpenState.Resolving(media)
-            when (val result = mediaOpenCoordinator.open(media)) {
-                is MediaOpenResult.Player -> {
-                    if (generation != openGeneration) return@launch
-                    val configuration = result.configuration.copy(startPositionMs = 0)
-                    if (!configuration.isDirectBackgroundEligible()) {
-                        if (!queueController.settle(index, queueGeneration)) return@launch
-                        onForegroundPlaybackRequired()
-                        val queue = queueController.state.value
-                        if (
-                            generation != openGeneration ||
-                            queue.generation != queueGeneration ||
-                            queue.currentIndex != index ||
-                            queue.current?.reference != media.reference
-                        ) return@launch
-                        mutableMediaOpenState.value = MediaOpenState.Idle
-                        if (foregroundPlayerAvailable) {
-                            openQueuePlayer(configuration)
-                        } else {
-                            pendingForegroundPlayback = PendingForegroundPlayback(
-                                item = media,
-                                configuration = configuration,
-                                queueIndex = index,
-                                queueGeneration = queueGeneration,
-                            )
-                            mutableForegroundPlaybackState.value = ForegroundPlaybackState.Required(media)
-                        }
-                        return@launch
-                    }
-                    if (!queueController.settle(index, queueGeneration)) return@launch
+            resolveQueueCandidate(
+                media = media,
+                index = index,
+                queueGeneration = queueGeneration,
+                unavailableForward = index > (queueController.state.value.currentIndex ?: -1),
+                generation = generation,
+            )
+        }
+    }
+
+    private suspend fun resolveQueueCandidate(
+        media: MediaCatalogItem,
+        index: Int,
+        queueGeneration: Long,
+        unavailableForward: Boolean,
+        generation: Long,
+    ) {
+        mutableMediaOpenState.value = MediaOpenState.Resolving(media)
+        when (val result = mediaOpenCoordinator.open(media)) {
+            is MediaOpenResult.Player -> {
+                if (generation != openGeneration) return
+                val configuration = result.configuration.copy(startPositionMs = 0)
+                if (!configuration.isDirectBackgroundEligible()) {
+                    if (!queueController.settle(index, queueGeneration)) return
+                    onForegroundPlaybackRequired()
+                    val queue = queueController.state.value
+                    if (
+                        generation != openGeneration ||
+                        queue.generation != queueGeneration ||
+                        queue.currentIndex != index ||
+                        queue.current?.reference != media.reference
+                    ) return
                     mutableMediaOpenState.value = MediaOpenState.Idle
-                    openQueuePlayer(configuration)
+                    if (foregroundPlayerAvailable) {
+                        openQueuePlayer(configuration)
+                    } else {
+                        pendingForegroundPlayback = PendingForegroundPlayback(
+                            item = media,
+                            configuration = configuration,
+                            queueIndex = index,
+                            queueGeneration = queueGeneration,
+                        )
+                        mutableForegroundPlaybackState.value = ForegroundPlaybackState.Required(media)
+                    }
+                    return
                 }
-                is MediaOpenResult.Failure -> if (generation == openGeneration) {
-                    if (result.retryable) mutableMediaOpenState.value = MediaOpenState.Failed(media, result.message, true)
-                    else queueController.unavailable(
-                        index,
-                        queueGeneration,
-                        forward = index > (queueController.state.value.currentIndex ?: -1),
-                    )
-                }
+                if (!queueController.settle(index, queueGeneration)) return
+                mutableMediaOpenState.value = MediaOpenState.Idle
+                openQueuePlayer(configuration)
+            }
+            is MediaOpenResult.Failure -> if (generation == openGeneration) {
+                if (result.retryable) mutableMediaOpenState.value = MediaOpenState.Failed(media, result.message, true)
+                else queueController.unavailable(index, queueGeneration, forward = unavailableForward)
             }
         }
     }

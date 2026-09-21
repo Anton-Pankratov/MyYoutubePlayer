@@ -92,6 +92,11 @@ class DirectAudioSessionCoordinator(
         }
     }
 
+    /** Persists the active Direct-audio position before Root replaces it through queue selection. */
+    suspend fun persistProgressForQueueSelection() {
+        sessionMutex.withLock { persistCurrentProgress() }
+    }
+
     /** Called by Root's explicit stop boundary. */
     fun stop() {
         scope.launch {
