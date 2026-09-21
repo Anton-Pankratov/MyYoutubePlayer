@@ -16,6 +16,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.QueueMusic
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.outlined.LiveTv
@@ -34,6 +35,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
@@ -57,13 +61,16 @@ import kg.dev.shared.feature.player.PlayerError
 import kg.dev.shared.feature.player.presentation.PlayerComponent
 import kg.dev.shared.feature.player.presentation.PlayerUiState
 import kg.dev.shared.core.ui.navigation.PlayerComponent as NavigationPlayerComponent
+import kg.dev.shared.core.ui.navigation.PlaybackQueueState
 
 @Composable
 fun PlayerContent(
     component: PlayerComponent,
     modifier: Modifier = Modifier,
     mediaSurface: @Composable ((Modifier) -> Unit)? = null,
-    providerAdapters: ProviderPlaybackAdapterRegistry = ProviderPlaybackAdapterRegistry.Empty
+    providerAdapters: ProviderPlaybackAdapterRegistry = ProviderPlaybackAdapterRegistry.Empty,
+    activeQueue: PlaybackQueueState? = null,
+    onSelectQueueItem: (Int) -> Unit = {},
 ) {
     val state by component.state.collectAsState()
     val queueControls by component.queueControls.collectAsState()
@@ -78,6 +85,8 @@ fun PlayerContent(
         queueControls = queueControls,
         onQueuePrevious = component::previousQueueItem,
         onQueueNext = component::nextQueueItem,
+        activeQueue = activeQueue,
+        onSelectQueueItem = onSelectQueueItem,
         modifier = modifier,
         mediaSurface = mediaSurface,
         providerAdapters = providerAdapters,
@@ -89,7 +98,9 @@ fun PlayerContent(
 fun ProviderPlayerContent(
     component: NavigationPlayerComponent,
     modifier: Modifier = Modifier,
-    providerAdapters: ProviderPlaybackAdapterRegistry = ProviderPlaybackAdapterRegistry.Empty
+    providerAdapters: ProviderPlaybackAdapterRegistry = ProviderPlaybackAdapterRegistry.Empty,
+    activeQueue: PlaybackQueueState? = null,
+    onSelectQueueItem: (Int) -> Unit = {},
 ) {
     val reference = MediaReference(MediaProviderId(component.providerId), component.mediaId)
     val source = if (component.playbackKind == "direct") {
@@ -119,6 +130,8 @@ fun ProviderPlayerContent(
         onRetry = {},
         onSetFavorite = {},
         onSetWatchLater = {},
+        activeQueue = activeQueue,
+        onSelectQueueItem = onSelectQueueItem,
         modifier = modifier,
         providerAdapters = providerAdapters
     )
@@ -136,11 +149,18 @@ fun PlayerContent(
     queueControls: kg.dev.shared.feature.player.presentation.QueueControls? = null,
     onQueuePrevious: () -> Unit = {},
     onQueueNext: () -> Unit = {},
+    activeQueue: PlaybackQueueState? = null,
+    onSelectQueueItem: (Int) -> Unit = {},
     modifier: Modifier = Modifier,
     mediaSurface: @Composable ((Modifier) -> Unit)? = null,
     providerAdapters: ProviderPlaybackAdapterRegistry = ProviderPlaybackAdapterRegistry.Empty,
     providerSession: ProviderPlaybackSession? = null
 ) {
+    val hasActiveQueue = activeQueue?.isActive == true
+    var isQueuePanelOpen by remember { mutableStateOf(false) }
+    androidx.compose.runtime.LaunchedEffect(hasActiveQueue) {
+        if (!hasActiveQueue) isQueuePanelOpen = false
+    }
     val media = state.media
     val source = media?.source
     val canUseNativePlayer = source is PlaybackSource.Direct && mediaSurface != null
@@ -210,10 +230,25 @@ fun PlayerContent(
                     )
                 }
                 queueControls?.let { queue ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(MediaSpacing.sm)) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(MediaSpacing.sm),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
                         androidx.compose.material3.OutlinedButton(onClick = onQueuePrevious, enabled = queue.hasPrevious) { Text("Previous") }
                         Text("${queue.currentIndex + 1} of ${queue.totalCount}")
                         androidx.compose.material3.OutlinedButton(onClick = onQueueNext, enabled = queue.hasNext) { Text("Next") }
+                        if (hasActiveQueue) {
+                            androidx.compose.material3.IconButton(
+                                onClick = { isQueuePanelOpen = true },
+                            ) {
+                                Icon(Icons.AutoMirrored.Outlined.QueueMusic, "Open active queue")
+                            }
+                        }
+                    }
+                }
+                if (hasActiveQueue && queueControls == null) {
+                    androidx.compose.material3.IconButton(onClick = { isQueuePanelOpen = true }) {
+                        Icon(Icons.AutoMirrored.Outlined.QueueMusic, "Open active queue")
                     }
                 }
 
@@ -248,6 +283,17 @@ fun PlayerContent(
                     )
                 }
             }
+        }
+
+        if (isQueuePanelOpen && activeQueue?.isActive == true) {
+            ActiveQueuePanel(
+                queue = activeQueue,
+                onDismissRequest = { isQueuePanelOpen = false },
+                onSelect = { index ->
+                    isQueuePanelOpen = false
+                    onSelectQueueItem(index)
+                },
+            )
         }
     }
 }

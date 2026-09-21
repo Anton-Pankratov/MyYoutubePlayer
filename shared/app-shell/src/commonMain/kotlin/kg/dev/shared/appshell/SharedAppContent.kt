@@ -29,6 +29,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -47,6 +48,7 @@ import kg.dev.shared.core.ui.design.MediaTheme
 import kg.dev.shared.core.ui.design.layoutForWidth
 import kg.dev.shared.core.ui.navigation.Configuration
 import kg.dev.shared.core.ui.navigation.MediaOpenState
+import kg.dev.shared.core.ui.navigation.PlaybackQueueState
 import kg.dev.shared.core.ui.navigation.ForegroundPlaybackState
 import kg.dev.shared.core.ui.navigation.PlayerComponent
 import kg.dev.shared.core.ui.navigation.RootComponent
@@ -77,13 +79,14 @@ fun SharedAppContent(
     homeComponentFactory: HomeComponentFactory? = null,
     libraryComponentFactory: LibraryComponentFactory? = null,
     onImportLocalMedia: (() -> Unit)? = null,
-    playerContent: @Composable (PlayerComponent, Modifier) -> Unit = { player, modifier ->
+    playerContent: @Composable (PlayerComponent, PlaybackQueueState, (Int) -> Unit, Modifier) -> Unit = { player, _, _, modifier ->
         EmptyState("Playback unavailable", player.title ?: "This media cannot be played here.", modifier)
     }
 ) {
     val stack by rootComponent.childStack.subscribeAsState()
     val mediaOpenState by rootComponent.mediaOpenState.subscribeAsState()
     val foregroundPlaybackState by rootComponent.foregroundPlaybackState.subscribeAsState()
+    val playbackQueue by rootComponent.playbackQueue.collectAsState()
     val activeConfiguration = stack.active.configuration
     val destinations = listOf(
         Destination(Configuration.Home, "Home", Icons.Outlined.Home, rootComponent::showHome),
@@ -104,6 +107,7 @@ fun SharedAppContent(
                         libraryComponentFactory = libraryComponentFactory,
                         onImportLocalMedia = onImportLocalMedia,
                         playerContent = playerContent,
+                        playbackQueue = playbackQueue,
                         modifier = contentModifier
                     )
                     if (isPlayer) PlayerBackButton(rootComponent::navigateBack)
@@ -118,6 +122,7 @@ fun SharedAppContent(
                         libraryComponentFactory = libraryComponentFactory,
                         onImportLocalMedia = onImportLocalMedia,
                         playerContent = playerContent,
+                        playbackQueue = playbackQueue,
                         modifier = Modifier.weight(1f).fillMaxSize()
                     )
                 }
@@ -209,7 +214,8 @@ private fun ActiveContent(
     homeComponentFactory: HomeComponentFactory?,
     libraryComponentFactory: LibraryComponentFactory?,
     onImportLocalMedia: (() -> Unit)?,
-    playerContent: @Composable (PlayerComponent, Modifier) -> Unit,
+    playerContent: @Composable (PlayerComponent, PlaybackQueueState, (Int) -> Unit, Modifier) -> Unit,
+    playbackQueue: PlaybackQueueState,
     modifier: Modifier
 ) {
     when (child) {
@@ -226,7 +232,12 @@ private fun ActiveContent(
             }
         }
         is RootComponent.Child.Search -> SearchContent(child.component, modifier)
-        is RootComponent.Child.Player -> playerContent(child.component, modifier)
+        is RootComponent.Child.Player -> playerContent(
+            child.component,
+            playbackQueue,
+            rootComponent::selectQueueItem,
+            modifier,
+        )
         is RootComponent.Child.Profile -> {
             val library = libraryComponentFactory?.let { factory ->
                 remember(child.component) { factory(child.component as ComponentContext, rootComponent::openMedia, rootComponent::playAll) }

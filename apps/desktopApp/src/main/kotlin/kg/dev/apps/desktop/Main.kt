@@ -58,7 +58,14 @@ fun main() {
                             onItemSelected = selected
                         )
                     },
-                    playerContent = { component, modifier -> ProviderPlayerContent(component, modifier) }
+                    playerContent = { component, playbackQueue, onSelectQueueItem, modifier ->
+                        ProviderPlayerContent(
+                            component = component,
+                            modifier = modifier,
+                            activeQueue = playbackQueue,
+                            onSelectQueueItem = onSelectQueueItem,
+                        )
+                    }
                 )
             }
         }

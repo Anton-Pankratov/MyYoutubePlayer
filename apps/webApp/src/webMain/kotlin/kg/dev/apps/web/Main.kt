@@ -30,8 +30,13 @@ fun main() {
     )
     CanvasBasedWindow("Luma — Media Library") {
         MediaAppTheme {
-            SharedAppContent(rootComponent, playerContent = { component, modifier ->
-                ProviderPlayerContent(component, modifier)
+            SharedAppContent(rootComponent, playerContent = { component, playbackQueue, onSelectQueueItem, modifier ->
+                ProviderPlayerContent(
+                    component = component,
+                    modifier = modifier,
+                    activeQueue = playbackQueue,
+                    onSelectQueueItem = onSelectQueueItem,
+                )
             })
         }
     }

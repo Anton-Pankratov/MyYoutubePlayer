@@ -57,10 +57,15 @@ fun MainScreen(rootComponent: RootComponent<SearchComponent>) {
             DefaultLibraryHubComponent(componentContext, savedMediaRepository, libraryViewPreferences, mediaCollectionRepository, selected, onPlayAll = playAll)
         },
         onImportLocalMedia = { localVideoPicker.launch(arrayOf("video/*")) }
-    ) { navigationComponent, modifier ->
+    ) { navigationComponent, playbackQueue, onSelectQueueItem, modifier ->
         val playerComponent = navigationComponent as? PlayerComponent
         if (playerComponent is kg.dev.shared.feature.player.presentation.DefaultPlayerComponent) {
-            AndroidPlayerContent(playerComponent, modifier)
+            AndroidPlayerContent(
+                component = playerComponent,
+                modifier = modifier,
+                activeQueue = playbackQueue,
+                onSelectQueueItem = onSelectQueueItem,
+            )
         }
     }
 }

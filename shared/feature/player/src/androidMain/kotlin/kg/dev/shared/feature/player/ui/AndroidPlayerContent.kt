@@ -32,15 +32,23 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.ui.PlayerView
 import kg.dev.shared.feature.player.AndroidVideoPlayerController
+import kg.dev.shared.core.ui.navigation.PlaybackQueueState
 import kg.dev.shared.feature.player.presentation.DefaultPlayerComponent
 
 @Composable
-fun AndroidPlayerContent(component: DefaultPlayerComponent, modifier: Modifier = Modifier) {
+fun AndroidPlayerContent(
+    component: DefaultPlayerComponent,
+    modifier: Modifier = Modifier,
+    activeQueue: PlaybackQueueState? = null,
+    onSelectQueueItem: (Int) -> Unit = {},
+) {
     val controller = component.videoPlayerController as? AndroidVideoPlayerController
     val serviceOwnedAudio = component.directPlaybackHost != null
     PlayerContent(
         component = component,
         modifier = modifier,
+        activeQueue = activeQueue,
+        onSelectQueueItem = onSelectQueueItem,
         providerAdapters = component.providerPlaybackAdapters,
         mediaSurface = if (controller == null || serviceOwnedAudio) null else { surfaceModifier ->
             AndroidView(

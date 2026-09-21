@@ -132,8 +132,13 @@ fun MainViewController(youtubeApiKey: String): UIViewController {
                 libraryComponentFactory = { context, selected, playAll ->
                     DefaultLibraryHubComponent(context, koin.get<SavedMediaRepository>(), koin.get(), koin.get<MediaCollectionRepository>(), selected, onPlayAll = playAll)
                 },
-                playerContent = { component, modifier ->
-                    IosPlayerContent(component as DefaultPlayerComponent, modifier)
+                playerContent = { component, playbackQueue, onSelectQueueItem, modifier ->
+                    IosPlayerContent(
+                        component = component as DefaultPlayerComponent,
+                        modifier = modifier,
+                        activeQueue = playbackQueue,
+                        onSelectQueueItem = onSelectQueueItem,
+                    )
                 }
             )
         }

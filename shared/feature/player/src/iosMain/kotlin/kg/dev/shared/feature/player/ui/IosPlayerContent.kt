@@ -5,6 +5,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.interop.UIKitView
 import kg.dev.shared.feature.player.IosVideoPlayerController
+import kg.dev.shared.core.ui.navigation.PlaybackQueueState
 import kg.dev.shared.feature.player.presentation.DefaultPlayerComponent
 import kotlinx.cinterop.ExperimentalForeignApi
 import platform.AVFoundation.AVPlayer
@@ -14,11 +15,18 @@ import platform.UIKit.UIView
 
 @Composable
 @OptIn(ExperimentalForeignApi::class)
-fun IosPlayerContent(component: DefaultPlayerComponent, modifier: Modifier = Modifier) {
+fun IosPlayerContent(
+    component: DefaultPlayerComponent,
+    modifier: Modifier = Modifier,
+    activeQueue: PlaybackQueueState? = null,
+    onSelectQueueItem: (Int) -> Unit = {},
+) {
     val controller = component.videoPlayerController as? IosVideoPlayerController
     PlayerContent(
         component = component,
         modifier = modifier,
+        activeQueue = activeQueue,
+        onSelectQueueItem = onSelectQueueItem,
         providerAdapters = component.providerPlaybackAdapters,
         // Eligible Direct audio is rendered and retained by the process-scoped host, not a UIView.
         mediaSurface = if (controller == null || component.directPlaybackHost != null) null else { surfaceModifier ->
