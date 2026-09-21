@@ -55,6 +55,14 @@ class DefaultPlayerComponent(
         providerPlaybackAdapters[it.reference.provider]
     }
     override val providerPlaybackSession: ProviderPlaybackSession? = providerAdapter?.createSession(media)
+    override val canPresentFullscreen: Boolean
+        get() = when (val source = media.source) {
+            is PlaybackSource.Direct -> source.mimeType
+                ?.trim()
+                ?.startsWith("video/", ignoreCase = true) == true
+            is PlaybackSource.ProviderControlled ->
+                providerPlaybackSession?.capabilities?.supportsFullscreenPresentation == true
+        }
 
     override val mediaId: String get() = media.catalogItem.reference.externalId
     override val providerId: String get() = media.catalogItem.reference.provider.value
@@ -71,6 +79,8 @@ class DefaultPlayerComponent(
     init {
         lifecycle.subscribe(object : Lifecycle.Callbacks {
             override fun onDestroy() {
+                // Presentation belongs to this Player route only; never carry it into a replacement.
+                exitFullscreen()
                 if (directPlaybackHost != null) releaseAndCancel()
                 else persistProgress(releaseAfterPersisting = true)
             }
@@ -160,6 +170,16 @@ class DefaultPlayerComponent(
     }
     override fun nextQueueItem() { onQueueNext() }
     override fun previousQueueItem() { onQueuePrevious() }
+    override fun requestFullscreen() {
+        if (canPresentFullscreen && mutableState.value.displayMode != PlayerDisplayMode.Fullscreen) {
+            mutableState.value = mutableState.value.copy(displayMode = PlayerDisplayMode.Fullscreen)
+        }
+    }
+    override fun exitFullscreen() {
+        if (mutableState.value.displayMode != PlayerDisplayMode.Inline) {
+            mutableState.value = mutableState.value.copy(displayMode = PlayerDisplayMode.Inline)
+        }
+    }
 
     private fun collectBackendState(backendState: StateFlow<kg.dev.shared.feature.player.PlayerState>) {
         scope.launch {
@@ -173,7 +193,8 @@ class DefaultPlayerComponent(
                     durationMs = playerState.durationMs,
                     bufferedPositionMs = playerState.bufferedPositionMs,
                     isFavorite = mutableState.value.isFavorite,
-                    isWatchLater = mutableState.value.isWatchLater
+                    isWatchLater = mutableState.value.isWatchLater,
+                    displayMode = mutableState.value.displayMode,
                 )
                 if (!playerState.isCompleted) completionPersisted = false
                 val shouldPersist = directPlaybackHost == null && ((playerState.isCompleted && !completionPersisted) ||

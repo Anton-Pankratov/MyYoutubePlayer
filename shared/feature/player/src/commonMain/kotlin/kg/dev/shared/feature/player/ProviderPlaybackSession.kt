@@ -11,14 +11,16 @@ data class ProviderPlaybackCapabilities(
     val canSeek: Boolean,
     val reportsPosition: Boolean,
     val reportsDuration: Boolean,
-    val reportsBufferedPosition: Boolean = false
+    val reportsBufferedPosition: Boolean = false,
+    /** Provider-session capability; shared presentation never infers this from provider identity. */
+    val supportsFullscreenPresentation: Boolean = false,
 )
 
 /**
  * Provider-owned playback backend for one Player destination.
  *
  * The session deliberately uses the same normalized [PlayerState] as native playback so the
- * product layer never needs to understand provider SDK or WebView state values.
+ * product layer never needs to understand provider-specific state values.
  */
 interface ProviderPlaybackSession {
     val state: StateFlow<PlayerState>

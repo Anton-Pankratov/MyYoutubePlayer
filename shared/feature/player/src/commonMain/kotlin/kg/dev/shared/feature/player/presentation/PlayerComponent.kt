@@ -14,6 +14,12 @@ data class QueueControls(
     val hasNext: Boolean,
 )
 
+/** Ephemeral foreground presentation for the current Player destination. */
+enum class PlayerDisplayMode {
+    Inline,
+    Fullscreen,
+}
+
 data class PlayerUiState(
     val media: PlayableMedia? = null,
     val playbackState: PlaybackState = PlaybackState.Idle,
@@ -21,7 +27,8 @@ data class PlayerUiState(
     val durationMs: Long? = null,
     val bufferedPositionMs: Long? = null,
     val isFavorite: Boolean = false,
-    val isWatchLater: Boolean = false
+    val isWatchLater: Boolean = false,
+    val displayMode: PlayerDisplayMode = PlayerDisplayMode.Inline,
 ) {
     val isPlaying: Boolean get() = playbackState == PlaybackState.Playing
     val isCompleted: Boolean get() = playbackState == PlaybackState.Completed
@@ -33,6 +40,8 @@ interface PlayerComponent {
     val state: StateFlow<PlayerUiState>
     val providerPlaybackSession: ProviderPlaybackSession?
     val queueControls: StateFlow<QueueControls?>
+    /** Whether this resolved foreground media can present a fullscreen surface. */
+    val canPresentFullscreen: Boolean
     fun play()
     fun pause()
     fun seekTo(positionMs: Long)
@@ -41,4 +50,6 @@ interface PlayerComponent {
     fun setWatchLater(enabled: Boolean)
     fun nextQueueItem()
     fun previousQueueItem()
+    fun requestFullscreen()
+    fun exitFullscreen()
 }

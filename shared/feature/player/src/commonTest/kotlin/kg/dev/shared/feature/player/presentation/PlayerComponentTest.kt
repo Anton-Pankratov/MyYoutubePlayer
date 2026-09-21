@@ -41,6 +41,74 @@ import kotlin.test.assertTrue
 @OptIn(ExperimentalCoroutinesApi::class)
 class PlayerComponentTest {
     @Test
+    fun fullscreenPresentationStartsInlineAndEnterExitAreIdempotent() = runTest {
+        val lifecycle = LifecycleRegistry().also { it.onCreate() }
+        val controller = FakeController()
+        val component = component(lifecycle, controller, RecordingHistoryRepository(), StandardTestDispatcher(testScheduler))
+
+        assertTrue(component.canPresentFullscreen)
+        assertEquals(PlayerDisplayMode.Inline, component.state.value.displayMode)
+        component.requestFullscreen(); component.requestFullscreen()
+        assertEquals(PlayerDisplayMode.Fullscreen, component.state.value.displayMode)
+
+        controller.publish(PlayerState(media(), PlaybackState.Error(PlayerError.NetworkFailure)))
+        advanceUntilIdle()
+        assertEquals(PlayerDisplayMode.Fullscreen, component.state.value.displayMode)
+        component.exitFullscreen(); component.exitFullscreen()
+        assertEquals(PlayerDisplayMode.Inline, component.state.value.displayMode)
+        lifecycle.onDestroy()
+    }
+
+    @Test
+    fun fullscreenCapabilityIsProviderNeutralAndExcludesDirectAudio() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val audioLifecycle = LifecycleRegistry().also { it.onCreate() }
+        val audio = PlayableMedia(media().catalogItem, PlaybackSource.Direct("https://example.test/audio", "audio/mpeg"))
+        val audioComponent = DefaultPlayerComponent(
+            DefaultComponentContext(audioLifecycle), audio, FakeController(), RecordingHistoryRepository(),
+            nowEpochMillis = { 99 }, coroutineContext = dispatcher,
+        )
+        assertFalse(audioComponent.canPresentFullscreen)
+        audioComponent.requestFullscreen()
+        assertEquals(PlayerDisplayMode.Inline, audioComponent.state.value.displayMode)
+
+        val providerLifecycle = LifecycleRegistry().also { it.onCreate() }
+        val providerSession = FakeProviderSession(supportsFullscreenPresentation = true)
+        val provider = DefaultPlayerComponent(
+            DefaultComponentContext(providerLifecycle), media(providerControlled = true), FakeController(), RecordingHistoryRepository(),
+            nowEpochMillis = { 99 },
+            providerPlaybackAdapters = ProviderPlaybackAdapterRegistry(listOf(FakeProviderAdapter(providerSession))),
+            coroutineContext = dispatcher,
+        )
+        advanceUntilIdle()
+        assertTrue(provider.canPresentFullscreen)
+        provider.requestFullscreen()
+        assertEquals(PlayerDisplayMode.Fullscreen, provider.state.value.displayMode)
+        audioLifecycle.onDestroy(); providerLifecycle.onDestroy()
+    }
+
+    @Test
+    fun mediaReplacementForegroundRestoreAndDestructionStartOrEndInline() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val firstLifecycle = LifecycleRegistry().also { it.onCreate() }
+        val first = component(firstLifecycle, FakeController(), RecordingHistoryRepository(), dispatcher)
+        first.requestFullscreen()
+        assertEquals(PlayerDisplayMode.Fullscreen, first.state.value.displayMode)
+
+        firstLifecycle.onDestroy()
+        assertEquals(PlayerDisplayMode.Inline, first.state.value.displayMode)
+
+        val replacementLifecycle = LifecycleRegistry().also { it.onCreate() }
+        val replacement = DefaultPlayerComponent(
+            DefaultComponentContext(replacementLifecycle), media(), FakeController(), RecordingHistoryRepository(),
+            nowEpochMillis = { 99 }, coroutineContext = dispatcher,
+        )
+        // Root queue replacement and ForegroundRequired restoration both create a new Player route.
+        assertEquals(PlayerDisplayMode.Inline, replacement.state.value.displayMode)
+        replacementLifecycle.onDestroy()
+    }
+
+    @Test
     fun lifecycleIsRepresentedByOneAuthoritativePlaybackState() = runTest {
         val lifecycle = LifecycleRegistry().also { it.onCreate() }
         val controller = FakeController()
@@ -543,7 +611,7 @@ class PlayerComponentTest {
             "Media"
         ),
         if (providerControlled) PlaybackSource.ProviderControlled(MediaReference(MediaProviders.YouTube, "video"))
-        else PlaybackSource.Direct("https://example.test/video.mp4")
+        else PlaybackSource.Direct("https://example.test/video.mp4", "video/mp4")
     )
 
     private fun item(provider: String, externalId: String) = MediaCatalogItem(
@@ -552,7 +620,7 @@ class PlayerComponentTest {
 
     private fun playable(item: MediaCatalogItem) = PlayableMedia(
         item,
-        if (item.reference.provider == MediaProviders.Direct) PlaybackSource.Direct("https://example.test/${item.reference.externalId}.mp4")
+        if (item.reference.provider == MediaProviders.Direct) PlaybackSource.Direct("https://example.test/${item.reference.externalId}.mp4", "video/mp4")
         else PlaybackSource.ProviderControlled(item.reference)
     )
 
@@ -640,10 +708,18 @@ class PlayerComponentTest {
         ) = Unit
     }
 
-    private class FakeProviderSession : ProviderPlaybackSession {
+    private class FakeProviderSession(
+        supportsFullscreenPresentation: Boolean = false,
+    ) : ProviderPlaybackSession {
         private val mutableState = MutableStateFlow(PlayerState())
         override val state: StateFlow<PlayerState> = mutableState
-        override val capabilities = ProviderPlaybackCapabilities(true, true, true, true)
+        override val capabilities = ProviderPlaybackCapabilities(
+            canPlayPause = true,
+            canSeek = true,
+            reportsPosition = true,
+            reportsDuration = true,
+            supportsFullscreenPresentation = supportsFullscreenPresentation,
+        )
         var preloadCalls = 0
         var loadCalls = 0
         var playCalls = 0

@@ -67,7 +67,8 @@ internal class IosYouTubePlaybackSession(
         canPlayPause = true,
         canSeek = true,
         reportsPosition = true,
-        reportsDuration = true
+        reportsDuration = true,
+        supportsFullscreenPresentation = true,
     )
 
     private var webView: WKWebView? = null

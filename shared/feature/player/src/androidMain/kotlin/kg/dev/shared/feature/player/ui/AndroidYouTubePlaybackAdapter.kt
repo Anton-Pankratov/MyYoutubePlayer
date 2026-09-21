@@ -57,7 +57,8 @@ private class AndroidYouTubePlaybackSession(
         canPlayPause = true,
         canSeek = true,
         reportsPosition = true,
-        reportsDuration = true
+        reportsDuration = true,
+        supportsFullscreenPresentation = true,
     )
 
     private var webView: WebView? = null
