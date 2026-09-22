@@ -25,6 +25,10 @@ import org.koin.core.context.startKoin
 import org.koin.dsl.module
 import java.io.File
 import kg.dev.shared.core.ui.design.MediaAppTheme
+import kg.dev.shared.core.ui.design.AppearancePreferences
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 
 fun main() {
     val koin = startKoin { modules(commonModules() + desktopModule()) }.koin
@@ -38,6 +42,7 @@ fun main() {
     )
 
     application {
+        val appearancePreferences = remember { AppearancePreferences(DesktopAppearancePreferencesStorage()) }
         Window(
             onCloseRequest = {
                 lifecycle.onDestroy()
@@ -47,7 +52,8 @@ fun main() {
             },
             title = "Luma — Media Library"
         ) {
-            MediaAppTheme {
+            val appearance by appearancePreferences.appearance.collectAsState()
+            MediaAppTheme(appearance.themeMode, appearance.palette) {
                 SharedAppContent(
                     rootComponent = rootComponent,
                     homeComponentFactory = { context, selected, _ ->
@@ -65,7 +71,8 @@ fun main() {
                             activeQueue = playbackQueue,
                             onSelectQueueItem = onSelectQueueItem,
                         )
-                    }
+                    },
+                    appearancePreferences = appearancePreferences,
                 )
             }
         }

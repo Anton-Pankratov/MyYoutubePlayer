@@ -27,13 +27,29 @@ data class MediaColors(
     val textSecondary: Color,
     val textTertiary: Color,
     val divider: Color,
+    val outlineSubtle: Color,
     val error: Color,
     val success: Color,
     val warning: Color,
+    val info: Color,
+    val favorite: Color,
+    val watchLater: Color,
+    val currentPlaying: Color,
     val overlay: Color,
     val playerBackground: Color,
     val playerControls: Color
 )
+
+enum class AppThemeMode { System, Light, Dark }
+
+enum class AppColorPalette(val label: String) {
+    Default("Cinder"),
+    Ocean("Ocean"),
+    Emerald("Emerald"),
+    Violet("Violet"),
+    Amber("Amber"),
+    Rose("Rose")
+}
 
 @Immutable
 data class MediaTypography(
@@ -68,6 +84,19 @@ object MediaShapes {
     val dialog = androidx.compose.foundation.shape.RoundedCornerShape(24.dp)
 }
 
+/** Restrained motion defaults for state changes; feature UI opts in only where motion clarifies state. */
+object MediaMotion {
+    const val fastMillis = 120
+    const val standardMillis = 200
+    const val emphasizedMillis = 320
+}
+
+object MediaElevation {
+    val flat = 0.dp
+    val raised = 2.dp
+    val floating = 6.dp
+}
+
 enum class AdaptiveLayout { Compact, Medium, Expanded }
 
 fun layoutForWidth(width: androidx.compose.ui.unit.Dp): AdaptiveLayout = when {
@@ -76,45 +105,80 @@ fun layoutForWidth(width: androidx.compose.ui.unit.Dp): AdaptiveLayout = when {
     else -> AdaptiveLayout.Expanded
 }
 
-private val DarkColors = MediaColors(
+private data class PaletteAccent(
+    val lightPrimary: Color,
+    val lightSelected: Color,
+    val darkPrimary: Color,
+    val darkSelected: Color,
+    val darkOnPrimary: Color,
+)
+
+private val paletteAccents = mapOf(
+    AppColorPalette.Default to PaletteAccent(Color(0xFFA94D16), Color(0xFFF7E4D6), Color(0xFFF3A36B), Color(0xFF3A302B), Color(0xFF2E180C)),
+    AppColorPalette.Ocean to PaletteAccent(Color(0xFF006A83), Color(0xFFD7F0F7), Color(0xFF6ED8F5), Color(0xFF133640), Color(0xFF003544)),
+    AppColorPalette.Emerald to PaletteAccent(Color(0xFF086B57), Color(0xFFD8F3E8), Color(0xFF72D8B5), Color(0xFF14382F), Color(0xFF00382A)),
+    AppColorPalette.Violet to PaletteAccent(Color(0xFF6255A8), Color(0xFFE9E4FF), Color(0xFFC9BFFF), Color(0xFF322E4C), Color(0xFF292344)),
+    AppColorPalette.Amber to PaletteAccent(Color(0xFF9A5A00), Color(0xFFFFECCB), Color(0xFFFFC66E), Color(0xFF40311F), Color(0xFF442900)),
+    AppColorPalette.Rose to PaletteAccent(Color(0xFF9B4167), Color(0xFFFFE1EA), Color(0xFFFFB1CB), Color(0xFF452735), Color(0xFF4A1730)),
+)
+
+internal fun palettePreviewColor(palette: AppColorPalette): Color = paletteAccents.getValue(palette).lightPrimary
+
+private fun darkColors(palette: AppColorPalette): MediaColors {
+    val accent = paletteAccents.getValue(palette)
+    return MediaColors(
     background = Color(0xFF101113),
     surface = Color(0xFF17191C),
     surfaceElevated = Color(0xFF202328),
     surfaceInteractive = Color(0xFF282C31),
-    surfaceSelected = Color(0xFF3A302B),
-    primary = Color(0xFFF3A36B),
-    onPrimary = Color(0xFF2E180C),
+    surfaceSelected = accent.darkSelected,
+    primary = accent.darkPrimary,
+    onPrimary = accent.darkOnPrimary,
     textPrimary = Color(0xFFF4F1EC),
     textSecondary = Color(0xFFC5C0B8),
     textTertiary = Color(0xFF918D87),
     divider = Color(0xFF303338),
+    outlineSubtle = Color(0xFF25282C),
     error = Color(0xFFFFB4AB),
     success = Color(0xFF8FD7A5),
     warning = Color(0xFFF0C36E),
+    info = Color(0xFF9CCBFF),
+    favorite = Color(0xFFFFB1C8),
+    watchLater = Color(0xFFB9C9FF),
+    currentPlaying = accent.darkPrimary,
     overlay = Color(0xB3000000),
     playerBackground = Color.Black,
     playerControls = Color(0xFFF8F5EF)
-)
+    )
+}
 
-private val LightColors = MediaColors(
+private fun lightColors(palette: AppColorPalette): MediaColors {
+    val accent = paletteAccents.getValue(palette)
+    return MediaColors(
     background = Color(0xFFF7F5F1),
     surface = Color(0xFFFFFFFF),
     surfaceElevated = Color(0xFFF0EDE8),
     surfaceInteractive = Color(0xFFE8E4DE),
-    surfaceSelected = Color(0xFFF7E4D6),
-    primary = Color(0xFFA94D16),
+    surfaceSelected = accent.lightSelected,
+    primary = accent.lightPrimary,
     onPrimary = Color.White,
     textPrimary = Color(0xFF211F1C),
     textSecondary = Color(0xFF5E5953),
     textTertiary = Color(0xFF858079),
     divider = Color(0xFFDDD8D0),
+    outlineSubtle = Color(0xFFEAE6E0),
     error = Color(0xFFB3261E),
     success = Color(0xFF267A43),
     warning = Color(0xFF8A5A00),
+    info = Color(0xFF00658A),
+    favorite = Color(0xFF9D315B),
+    watchLater = Color(0xFF465CBA),
+    currentPlaying = accent.lightPrimary,
     overlay = Color(0x99000000),
     playerBackground = Color.Black,
     playerControls = Color.White
-)
+    )
+}
 
 private val AppTypography = MediaTypography(
     display = TextStyle(fontSize = 36.sp, lineHeight = 42.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.6).sp),
@@ -128,7 +192,7 @@ private val AppTypography = MediaTypography(
     button = TextStyle(fontSize = 14.sp, lineHeight = 18.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.1.sp)
 )
 
-private val LocalMediaColors = staticCompositionLocalOf { DarkColors }
+private val LocalMediaColors = staticCompositionLocalOf { darkColors(AppColorPalette.Default) }
 private val LocalMediaTypography = staticCompositionLocalOf { AppTypography }
 
 object MediaTheme {
@@ -140,11 +204,18 @@ object MediaTheme {
 
 @Composable
 fun MediaAppTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
+    themeMode: AppThemeMode = AppThemeMode.System,
+    palette: AppColorPalette = AppColorPalette.Default,
+    darkTheme: Boolean? = null,
     content: @Composable () -> Unit
 ) {
-    val colors = if (darkTheme) DarkColors else LightColors
-    val materialColors = if (darkTheme) {
+    val useDarkTheme = darkTheme ?: when (themeMode) {
+        AppThemeMode.System -> isSystemInDarkTheme()
+        AppThemeMode.Light -> false
+        AppThemeMode.Dark -> true
+    }
+    val colors = if (useDarkTheme) darkColors(palette) else lightColors(palette)
+    val materialColors = if (useDarkTheme) {
         darkColorScheme(
             primary = colors.primary,
             onPrimary = colors.onPrimary,
@@ -177,4 +248,10 @@ fun MediaAppTheme(
     ) {
         MaterialTheme(colorScheme = materialColors, content = content)
     }
+}
+
+fun resolvedDarkTheme(mode: AppThemeMode, systemDark: Boolean): Boolean = when (mode) {
+    AppThemeMode.System -> systemDark
+    AppThemeMode.Light -> false
+    AppThemeMode.Dark -> true
 }

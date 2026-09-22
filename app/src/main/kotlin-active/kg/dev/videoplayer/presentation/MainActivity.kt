@@ -4,6 +4,8 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import com.arkivanov.decompose.defaultComponentContext
 import kg.dev.shared.core.ui.navigation.DefaultRootComponent
 import kg.dev.shared.feature.search.domain.usecase.SearchChannelsUseCase
@@ -29,9 +31,12 @@ import kg.dev.shared.feature.player.library.SavedMediaRepository
 import kg.dev.videoplayer.presentation.main.MainScreen
 import org.koin.android.ext.android.get
 import kg.dev.shared.core.ui.design.MediaAppTheme
+import kg.dev.shared.core.ui.design.AppearancePreferences
+import kg.dev.videoplayer.di.AndroidAppearancePreferencesStorage
 import kg.dev.videoplayer.playback.AndroidServiceDirectPlaybackHost
 
 class MainActivity : ComponentActivity() {
+    private val appearancePreferences by lazy { AppearancePreferences(AndroidAppearancePreferencesStorage(applicationContext)) }
     private val directAudioHost by lazy { get<AndroidServiceDirectPlaybackHost>() }
     private val directAudioCoordinator by lazy { get<DirectAudioSessionCoordinator>() }
     private val directAudioCallbacks by lazy { get<DirectAudioApplicationCallbackGateway>() }
@@ -102,7 +107,12 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        setContent { MediaAppTheme { MainScreen(rootComponent) } }
+        setContent {
+            val appearance by appearancePreferences.appearance.collectAsState()
+            MediaAppTheme(appearance.themeMode, appearance.palette) {
+                MainScreen(rootComponent, appearancePreferences)
+            }
+        }
     }
 
     override fun onDestroy() {

@@ -18,6 +18,7 @@ import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.PersonOutline
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Button
@@ -32,6 +33,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -40,6 +43,8 @@ import com.arkivanov.decompose.ComponentContext
 import com.arkivanov.decompose.extensions.compose.subscribeAsState
 import kg.dev.shared.core.common.media.MediaCatalogItem
 import kg.dev.shared.core.ui.design.AdaptiveLayout
+import kg.dev.shared.core.ui.design.AppearancePreferences
+import kg.dev.shared.core.ui.design.AppearanceSettingsDialog
 import kg.dev.shared.core.ui.design.AppSurface
 import kg.dev.shared.core.ui.design.EmptyState
 import kg.dev.shared.core.ui.design.ErrorState
@@ -79,10 +84,12 @@ fun SharedAppContent(
     homeComponentFactory: HomeComponentFactory? = null,
     libraryComponentFactory: LibraryComponentFactory? = null,
     onImportLocalMedia: (() -> Unit)? = null,
+    appearancePreferences: AppearancePreferences? = null,
     playerContent: @Composable (PlayerComponent, PlaybackQueueState, (Int) -> Unit, Modifier) -> Unit = { player, _, _, modifier ->
         EmptyState("Playback unavailable", player.title ?: "This media cannot be played here.", modifier)
     }
 ) {
+    var isAppearanceOpen by remember { mutableStateOf(false) }
     val stack by rootComponent.childStack.subscribeAsState()
     val mediaOpenState by rootComponent.mediaOpenState.subscribeAsState()
     val foregroundPlaybackState by rootComponent.foregroundPlaybackState.subscribeAsState()
@@ -99,7 +106,7 @@ fun SharedAppContent(
             val layout = layoutForWidth(maxWidth)
             val isPlayer = activeConfiguration is Configuration.Player
             if (layout == AdaptiveLayout.Compact || isPlayer) {
-                CompactShell(!isPlayer, destinations, activeConfiguration) { contentModifier ->
+                CompactShell(!isPlayer, destinations, activeConfiguration, appearancePreferences?.let { { isAppearanceOpen = true } }) { contentModifier ->
                     ActiveContent(
                         child = stack.active.instance,
                         rootComponent = rootComponent,
@@ -114,7 +121,7 @@ fun SharedAppContent(
                 }
             } else {
                 Row(Modifier.fillMaxSize()) {
-                    AppNavigationRail(destinations, activeConfiguration)
+                    AppNavigationRail(destinations, activeConfiguration, appearancePreferences?.let { { isAppearanceOpen = true } })
                     ActiveContent(
                         child = stack.active.instance,
                         rootComponent = rootComponent,
@@ -129,6 +136,9 @@ fun SharedAppContent(
             }
             MediaOpenOverlay(mediaOpenState, rootComponent::retryOpenMedia)
             ForegroundPlaybackOverlay(foregroundPlaybackState, rootComponent::openPendingForegroundPlayback)
+            if (isAppearanceOpen && appearancePreferences != null) {
+                AppearanceSettingsDialog(appearancePreferences) { isAppearanceOpen = false }
+            }
         }
     }
 }
@@ -159,6 +169,7 @@ private fun CompactShell(
     showNavigation: Boolean,
     destinations: List<Destination>,
     activeConfiguration: Configuration,
+    onAppearance: (() -> Unit)?,
     content: @Composable (Modifier) -> Unit
 ) {
     Scaffold(
@@ -174,6 +185,14 @@ private fun CompactShell(
                             label = { Text(destination.label, style = MediaTheme.typography.label) }
                         )
                     }
+                    if (onAppearance != null) {
+                        NavigationBarItem(
+                            selected = false,
+                            onClick = onAppearance,
+                            icon = { Icon(Icons.Outlined.Settings, "Appearance") },
+                            label = { Text("Appearance", style = MediaTheme.typography.label) },
+                        )
+                    }
                 }
             }
         }
@@ -181,7 +200,7 @@ private fun CompactShell(
 }
 
 @Composable
-private fun AppNavigationRail(destinations: List<Destination>, activeConfiguration: Configuration) {
+private fun AppNavigationRail(destinations: List<Destination>, activeConfiguration: Configuration, onAppearance: (() -> Unit)?) {
     NavigationRail(containerColor = MediaTheme.colors.surface) {
         Surface(
             color = MediaTheme.colors.primary,
@@ -203,6 +222,14 @@ private fun AppNavigationRail(destinations: List<Destination>, activeConfigurati
                     )
                 }
             }
+        }
+        if (onAppearance != null) {
+            NavigationRailItem(
+                selected = false,
+                onClick = onAppearance,
+                icon = { Icon(Icons.Outlined.Settings, "Appearance") },
+                label = { Text("Appearance", style = MediaTheme.typography.label) },
+            )
         }
     }
 }

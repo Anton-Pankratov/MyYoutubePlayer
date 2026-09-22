@@ -18,6 +18,10 @@ import kotlinx.browser.window
 import org.koin.core.context.startKoin
 import org.koin.dsl.module
 import kg.dev.shared.core.ui.design.MediaAppTheme
+import kg.dev.shared.core.ui.design.AppearancePreferences
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 
 @OptIn(ExperimentalComposeUiApi::class)
 fun main() {
@@ -29,8 +33,10 @@ fun main() {
         searchComponentFactory = { childContext -> DefaultSearchComponent(childContext, koin.get<SearchChannelsUseCase>(), onMediaSelected = rootComponent::openMedia) }
     )
     CanvasBasedWindow("Luma — Media Library") {
-        MediaAppTheme {
-            SharedAppContent(rootComponent, playerContent = { component, playbackQueue, onSelectQueueItem, modifier ->
+        val appearancePreferences = remember { AppearancePreferences(WebAppearancePreferencesStorage()) }
+        val appearance by appearancePreferences.appearance.collectAsState()
+        MediaAppTheme(appearance.themeMode, appearance.palette) {
+            SharedAppContent(rootComponent, appearancePreferences = appearancePreferences, playerContent = { component, playbackQueue, onSelectQueueItem, modifier ->
                 ProviderPlayerContent(
                     component = component,
                     modifier = modifier,

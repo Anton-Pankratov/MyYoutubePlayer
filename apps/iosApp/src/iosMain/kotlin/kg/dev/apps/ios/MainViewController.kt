@@ -1,6 +1,8 @@
 package kg.dev.apps.ios
 
 import androidx.compose.ui.window.ComposeUIViewController
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.driver.native.NativeSqliteDriver
 import com.arkivanov.decompose.DefaultComponentContext
@@ -44,12 +46,14 @@ import org.koin.core.context.startKoin
 import org.koin.dsl.module
 import platform.UIKit.UIViewController
 import kg.dev.shared.core.ui.design.MediaAppTheme
+import kg.dev.shared.core.ui.design.AppearancePreferences
 
 fun MainViewController(youtubeApiKey: String): UIViewController {
     val koin = startKoin { modules(commonModules() + playerFeatureModule + iosModule(youtubeApiKey)) }.koin
     val directAudioHost = koin.get<IosDirectPlaybackHost>()
     val directAudioCoordinator = koin.get<DirectAudioSessionCoordinator>()
     val directAudioCallbacks = koin.get<DirectAudioApplicationCallbackGateway>()
+    val appearancePreferences = AppearancePreferences(IosAppearancePreferencesStorage())
     directAudioHost.bindSystemCommands(object : DirectPlaybackCommandCallbacks {
         override fun play() = directAudioHost.play()
         override fun pause() = directAudioHost.pause()
@@ -116,7 +120,8 @@ fun MainViewController(youtubeApiKey: String): UIViewController {
     }
     directAudioCallbacks.replace(callbackOwner, callbackOwner)
     return ComposeUIViewController {
-        MediaAppTheme {
+        val appearance by appearancePreferences.appearance.collectAsState()
+        MediaAppTheme(appearance.themeMode, appearance.palette) {
             SharedAppContent(
                 rootComponent = rootComponent,
                 homeComponentFactory = { context, selected, _ ->
@@ -139,7 +144,8 @@ fun MainViewController(youtubeApiKey: String): UIViewController {
                         activeQueue = playbackQueue,
                         onSelectQueueItem = onSelectQueueItem,
                     )
-                }
+                },
+                appearancePreferences = appearancePreferences,
             )
         }
     }

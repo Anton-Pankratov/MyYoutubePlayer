@@ -22,6 +22,7 @@ import kg.dev.shared.feature.player.library.DefaultLibraryHubComponent
 import kg.dev.shared.feature.player.library.MediaCollectionRepository
 import kg.dev.shared.feature.player.library.SavedMediaRepository
 import kg.dev.shared.feature.player.library.LibraryViewPreferencesRepository
+import kg.dev.shared.core.ui.design.AppearancePreferences
 import kg.dev.shared.feature.search.presentation.SearchComponent
 import kg.dev.videoplayer.localmedia.AndroidLocalMediaImporter
 import kg.dev.videoplayer.localmedia.LocalMediaImportResult
@@ -29,7 +30,7 @@ import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
 
 @Composable
-fun MainScreen(rootComponent: RootComponent<SearchComponent>) {
+fun MainScreen(rootComponent: RootComponent<SearchComponent>, appearancePreferences: AppearancePreferences) {
     val historyRepository = koinInject<HistoryRepository>()
     val localMediaImporter = koinInject<AndroidLocalMediaImporter>()
     val savedMediaRepository = koinInject<SavedMediaRepository>()
@@ -60,7 +61,8 @@ fun MainScreen(rootComponent: RootComponent<SearchComponent>) {
         libraryComponentFactory = { componentContext, selected, playAll ->
             DefaultLibraryHubComponent(componentContext, savedMediaRepository, libraryViewPreferences, mediaCollectionRepository, selected, onPlayAll = playAll)
         },
-        onImportLocalMedia = { localVideoPicker.launch(arrayOf("video/*")) }
+        onImportLocalMedia = { localVideoPicker.launch(arrayOf("video/*")) },
+        appearancePreferences = appearancePreferences,
     ) { navigationComponent, playbackQueue, onSelectQueueItem, modifier ->
         val playerComponent = navigationComponent as? PlayerComponent
         if (playerComponent is kg.dev.shared.feature.player.presentation.DefaultPlayerComponent) {
