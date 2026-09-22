@@ -11,6 +11,8 @@ import kg.dev.shared.feature.player.DirectMediaProvider
 import kg.dev.shared.feature.player.DirectAudioApplicationCallbackGateway
 import kg.dev.shared.feature.player.DirectAudioSessionCoordinator
 import kg.dev.shared.feature.history.domain.HistoryRepository
+import kg.dev.shared.feature.player.library.AndroidLibraryViewPreferencesStorage
+import kg.dev.shared.feature.player.library.LibraryViewPreferencesStorage
 import kg.dev.videoplayer.localmedia.AndroidLocalMediaImporter
 import kg.dev.videoplayer.playback.AndroidServiceDirectPlaybackHost
 import kg.dev.videoplayer.BuildConfig
@@ -39,6 +41,7 @@ fun androidModule() = module {
     single<VideoPlayerController> {
         AndroidVideoPlayerController(androidContext())
     }
+    single<LibraryViewPreferencesStorage> { AndroidLibraryViewPreferencesStorage(androidContext()) }
     single { AndroidServiceDirectPlaybackHost(androidContext()) }
     single { DirectAudioApplicationCallbackGateway() }
     single {
