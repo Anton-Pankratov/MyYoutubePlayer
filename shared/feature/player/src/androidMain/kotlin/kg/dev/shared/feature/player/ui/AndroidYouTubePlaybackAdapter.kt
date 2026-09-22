@@ -251,9 +251,14 @@ private class AndroidYouTubePlaybackSession(
 @Composable
 private fun AndroidYouTubePlayerSurface(session: AndroidYouTubePlaybackSession, modifier: Modifier) {
     val holder = remember(session) { WebViewHolder() }
+    val fullscreenPresentation = LocalAndroidFullscreenPresentation.current
     AndroidView(
         factory = { context ->
-            YouTubePlayerHostView(context).also { host ->
+            YouTubePlayerHostView(
+                context = context,
+                onFullscreenEntered = fullscreenPresentation.onEntered,
+                onFullscreenExited = fullscreenPresentation.onExited,
+            ).also { host ->
                 val view = host.webView
                 view.setLayerType(View.LAYER_TYPE_HARDWARE, null)
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -275,7 +280,9 @@ private fun AndroidYouTubePlayerSurface(session: AndroidYouTubePlaybackSession, 
                 session.attachWebView(view)
             }
         },
-        update = {},
+        update = { host ->
+            host.reconcileDisplayMode(fullscreenPresentation.isFullscreen)
+        },
         modifier = modifier
     )
     DisposableEffect(holder) {

@@ -1,9 +1,12 @@
 package kg.dev.videoplayer.presentation.main
 
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalContext
 import kg.dev.shared.appshell.SharedAppContent
@@ -13,6 +16,7 @@ import kg.dev.shared.feature.home.presentation.DefaultHomeComponent
 import kg.dev.shared.feature.home.presentation.HomeMediaAvailability
 import kg.dev.shared.feature.history.domain.HistoryRepository
 import kg.dev.shared.feature.player.presentation.PlayerComponent
+import kg.dev.shared.feature.player.presentation.PlayerDisplayMode
 import kg.dev.shared.feature.player.ui.AndroidPlayerContent
 import kg.dev.shared.feature.player.library.DefaultLibraryHubComponent
 import kg.dev.shared.feature.player.library.MediaCollectionRepository
@@ -60,6 +64,10 @@ fun MainScreen(rootComponent: RootComponent<SearchComponent>) {
     ) { navigationComponent, playbackQueue, onSelectQueueItem, modifier ->
         val playerComponent = navigationComponent as? PlayerComponent
         if (playerComponent is kg.dev.shared.feature.player.presentation.DefaultPlayerComponent) {
+            val playerState by playerComponent.state.collectAsState()
+            BackHandler(enabled = playerState.displayMode == PlayerDisplayMode.Fullscreen) {
+                playerComponent.exitFullscreen()
+            }
             AndroidPlayerContent(
                 component = playerComponent,
                 modifier = modifier,

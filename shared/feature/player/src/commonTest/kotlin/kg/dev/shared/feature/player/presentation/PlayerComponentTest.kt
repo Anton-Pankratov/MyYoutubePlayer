@@ -109,6 +109,22 @@ class PlayerComponentTest {
     }
 
     @Test
+    fun fullscreenPresentationDoesNotReloadOrSeekTheCurrentDirectVideoSession() = runTest {
+        val lifecycle = LifecycleRegistry().also { it.onCreate() }
+        val controller = FakeController()
+        val component = component(lifecycle, controller, RecordingHistoryRepository(), StandardTestDispatcher(testScheduler))
+
+        component.play()
+        advanceUntilIdle()
+        component.requestFullscreen()
+        component.exitFullscreen()
+
+        assertEquals(1, controller.loadCalls)
+        assertTrue(controller.seekCalls.isEmpty())
+        lifecycle.onDestroy()
+    }
+
+    @Test
     fun lifecycleIsRepresentedByOneAuthoritativePlaybackState() = runTest {
         val lifecycle = LifecycleRegistry().also { it.onCreate() }
         val controller = FakeController()

@@ -20,6 +20,8 @@ import androidx.compose.material.icons.automirrored.outlined.QueueMusic
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.outlined.LiveTv
+import androidx.compose.material.icons.outlined.Fullscreen
+import androidx.compose.material.icons.outlined.FullscreenExit
 import androidx.compose.material.icons.outlined.Favorite
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.WatchLater
@@ -59,6 +61,7 @@ import kg.dev.shared.feature.player.PlaybackState
 import kg.dev.shared.feature.player.PlayableMedia
 import kg.dev.shared.feature.player.PlayerError
 import kg.dev.shared.feature.player.presentation.PlayerComponent
+import kg.dev.shared.feature.player.presentation.PlayerDisplayMode
 import kg.dev.shared.feature.player.presentation.PlayerUiState
 import kg.dev.shared.core.ui.navigation.PlayerComponent as NavigationPlayerComponent
 import kg.dev.shared.core.ui.navigation.PlaybackQueueState
@@ -71,6 +74,8 @@ fun PlayerContent(
     providerAdapters: ProviderPlaybackAdapterRegistry = ProviderPlaybackAdapterRegistry.Empty,
     activeQueue: PlaybackQueueState? = null,
     onSelectQueueItem: (Int) -> Unit = {},
+    applyFullscreenPresentation: Boolean = false,
+    renderFullscreenSurface: Boolean = true,
 ) {
     val state by component.state.collectAsState()
     val queueControls by component.queueControls.collectAsState()
@@ -90,7 +95,11 @@ fun PlayerContent(
         modifier = modifier,
         mediaSurface = mediaSurface,
         providerAdapters = providerAdapters,
-        providerSession = component.providerPlaybackSession
+        providerSession = component.providerPlaybackSession,
+        canPresentFullscreen = applyFullscreenPresentation && component.canPresentFullscreen,
+        onRequestFullscreen = component::requestFullscreen,
+        onExitFullscreen = component::exitFullscreen,
+        renderFullscreenSurface = renderFullscreenSurface,
     )
 }
 
@@ -154,7 +163,11 @@ fun PlayerContent(
     modifier: Modifier = Modifier,
     mediaSurface: @Composable ((Modifier) -> Unit)? = null,
     providerAdapters: ProviderPlaybackAdapterRegistry = ProviderPlaybackAdapterRegistry.Empty,
-    providerSession: ProviderPlaybackSession? = null
+    providerSession: ProviderPlaybackSession? = null,
+    canPresentFullscreen: Boolean = false,
+    onRequestFullscreen: () -> Unit = {},
+    onExitFullscreen: () -> Unit = {},
+    renderFullscreenSurface: Boolean = true,
 ) {
     val hasActiveQueue = activeQueue?.isActive == true
     var isQueuePanelOpen by remember { mutableStateOf(false) }
@@ -169,15 +182,21 @@ fun PlayerContent(
     }
     val canUseProviderPlayer = providerAdapter != null
     val canControlProviderPlayer = canUseProviderPlayer && providerSession?.capabilities?.canPlayPause == true
+    val isFullscreenPresentation =
+        renderFullscreenSurface && canPresentFullscreen && state.displayMode == PlayerDisplayMode.Fullscreen
 
     BoxWithConstraints(modifier.fillMaxSize().background(MediaTheme.colors.background)) {
         val contentPadding = if (maxWidth < 600.dp) MediaSpacing.md else MediaSpacing.xxl
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+        Column(
+            Modifier.fillMaxSize().then(
+                if (isFullscreenPresentation) Modifier else Modifier.verticalScroll(rememberScrollState())
+            )
+        ) {
             Box(
-                Modifier.fillMaxWidth()
-                    .aspectRatio(16f / 9f)
+                if (isFullscreenPresentation) Modifier.fillMaxSize()
+                else Modifier.fillMaxWidth().aspectRatio(16f / 9f)
                     .background(MediaTheme.colors.playerBackground, MediaShapes.large),
-                contentAlignment = Alignment.Center
+                contentAlignment = Alignment.Center,
             ) {
                 when {
                     canUseNativePlayer -> mediaSurface?.invoke(Modifier.fillMaxSize())
@@ -185,23 +204,38 @@ fun PlayerContent(
                         providerSession,
                         media,
                         state.positionMs,
-                        Modifier.fillMaxSize()
+                        Modifier.fillMaxSize(),
                     )
                     source is PlaybackSource.ProviderControlled -> ProviderPlaybackUnavailable(
                         title = media.catalogItem.title,
-                        thumbnailUrl = media.catalogItem.thumbnailUrl
+                        thumbnailUrl = media.catalogItem.thumbnailUrl,
                     )
                     else -> ErrorState(
                         title = "Playback unavailable",
-                        message = "This video cannot currently be played inside the application."
+                        message = "This video cannot currently be played inside the application.",
                     )
                 }
                 if ((canUseNativePlayer || canUseProviderPlayer) && state.playbackState.isLoadingIndicatorVisible) {
                     CircularProgressIndicator(color = MediaTheme.colors.primary)
                 }
+                if (isFullscreenPresentation) {
+                    FilledIconButton(
+                        onClick = onExitFullscreen,
+                        modifier = Modifier.align(Alignment.TopEnd).padding(MediaSpacing.md),
+                    ) {
+                        Icon(Icons.Outlined.FullscreenExit, "Exit fullscreen")
+                    }
+                } else if (canPresentFullscreen) {
+                    FilledIconButton(
+                        onClick = onRequestFullscreen,
+                        modifier = Modifier.align(Alignment.TopEnd).padding(MediaSpacing.sm),
+                    ) {
+                        Icon(Icons.Outlined.Fullscreen, "Enter fullscreen")
+                    }
+                }
             }
 
-            Column(
+            if (!isFullscreenPresentation) Column(
                 Modifier.fillMaxWidth().widthIn(max = 1_200.dp).align(Alignment.CenterHorizontally)
                     .padding(horizontal = contentPadding, vertical = MediaSpacing.xl),
                 verticalArrangement = Arrangement.spacedBy(MediaSpacing.lg)
