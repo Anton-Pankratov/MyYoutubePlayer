@@ -5,8 +5,17 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class IosYouTubePlaybackAdapterTest {
+    @Test
+    fun providerSessionAdvertisesGenericFullscreenPresentationCapability() {
+        val session = IosYouTubePlaybackSession("video-id")
+
+        assertTrue(session.capabilities.supportsFullscreenPresentation)
+        session.release()
+    }
+
     @Test
     fun mapsOfficialYouTubeStatesToCommonPlaybackState() {
         assertEquals(PlaybackState.Loading, iosYouTubePlaybackState("-1"))

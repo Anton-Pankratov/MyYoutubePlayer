@@ -28,6 +28,9 @@ fun IosPlayerContent(
         activeQueue = activeQueue,
         onSelectQueueItem = onSelectQueueItem,
         providerAdapters = component.providerPlaybackAdapters,
+        // PlayerContent keeps this UIKit surface in the same composition slot while its
+        // fullscreen layout expands. The controller/session is therefore not recreated.
+        applyFullscreenPresentation = true,
         // Eligible Direct audio is rendered and retained by the process-scoped host, not a UIView.
         mediaSurface = if (controller == null || component.directPlaybackHost != null) null else { surfaceModifier ->
             UIKitView(
