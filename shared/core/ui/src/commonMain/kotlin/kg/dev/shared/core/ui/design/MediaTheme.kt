@@ -219,6 +219,12 @@ fun MediaAppTheme(
         darkColorScheme(
             primary = colors.primary,
             onPrimary = colors.onPrimary,
+            primaryContainer = colors.surfaceSelected,
+            onPrimaryContainer = colors.textPrimary,
+            secondary = colors.primary,
+            onSecondary = colors.onPrimary,
+            secondaryContainer = colors.surfaceSelected,
+            onSecondaryContainer = colors.textPrimary,
             background = colors.background,
             onBackground = colors.textPrimary,
             surface = colors.surface,
@@ -226,12 +232,20 @@ fun MediaAppTheme(
             surfaceVariant = colors.surfaceElevated,
             onSurfaceVariant = colors.textSecondary,
             outline = colors.divider,
+            outlineVariant = colors.outlineSubtle,
+            surfaceTint = colors.primary,
             error = colors.error
         )
     } else {
         lightColorScheme(
             primary = colors.primary,
             onPrimary = colors.onPrimary,
+            primaryContainer = colors.surfaceSelected,
+            onPrimaryContainer = colors.textPrimary,
+            secondary = colors.primary,
+            onSecondary = colors.onPrimary,
+            secondaryContainer = colors.surfaceSelected,
+            onSecondaryContainer = colors.textPrimary,
             background = colors.background,
             onBackground = colors.textPrimary,
             surface = colors.surface,
@@ -239,6 +253,8 @@ fun MediaAppTheme(
             surfaceVariant = colors.surfaceElevated,
             onSurfaceVariant = colors.textSecondary,
             outline = colors.divider,
+            outlineVariant = colors.outlineSubtle,
+            surfaceTint = colors.primary,
             error = colors.error
         )
     }

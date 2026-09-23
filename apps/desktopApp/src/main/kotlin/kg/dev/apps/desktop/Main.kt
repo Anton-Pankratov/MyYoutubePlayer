@@ -32,16 +32,19 @@ import androidx.compose.runtime.remember
 
 fun main() {
     val koin = startKoin { modules(commonModules() + desktopModule()) }.koin
-    val lifecycle = LifecycleRegistry()
-    lifecycle.onCreate()
-    lateinit var rootComponent: DefaultRootComponent<SearchComponent>
-    rootComponent = DefaultRootComponent(
-        componentContext = DefaultComponentContext(lifecycle),
-        mediaOpenCoordinator = DefaultMediaOpenCoordinator(PlaybackSourceResolverRegistry(emptySet())),
-        searchComponentFactory = { childContext -> DefaultSearchComponent(childContext, koin.get<SearchChannelsUseCase>(), onMediaSelected = rootComponent::openMedia) }
-    )
-
     application {
+        val lifecycle = remember { LifecycleRegistry().apply { onCreate() } }
+        val rootComponent = remember {
+            lateinit var root: DefaultRootComponent<SearchComponent>
+            root = DefaultRootComponent(
+                componentContext = DefaultComponentContext(lifecycle),
+                mediaOpenCoordinator = DefaultMediaOpenCoordinator(PlaybackSourceResolverRegistry(emptySet())),
+                searchComponentFactory = { childContext ->
+                    DefaultSearchComponent(childContext, koin.get<SearchChannelsUseCase>(), onMediaSelected = root::openMedia)
+                }
+            )
+            root
+        }
         val appearancePreferences = remember { AppearancePreferences(DesktopAppearancePreferencesStorage()) }
         Window(
             onCloseRequest = {

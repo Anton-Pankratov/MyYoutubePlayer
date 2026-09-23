@@ -32,10 +32,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kg.dev.shared.core.common.media.MediaCatalogItem
 import kg.dev.shared.core.ui.design.AdaptiveLayout
-import kg.dev.shared.core.ui.design.CompactProgress
 import kg.dev.shared.core.ui.design.EmptyState
 import kg.dev.shared.core.ui.design.ErrorState
 import kg.dev.shared.core.ui.design.LoadingMediaCard
+import kg.dev.shared.core.ui.design.LoadingChannelCard
 import kg.dev.shared.core.ui.design.MediaSearchField
 import kg.dev.shared.core.ui.design.MediaShapes
 import kg.dev.shared.core.ui.design.MediaSpacing
@@ -110,7 +110,7 @@ fun SearchContent(
 
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 when {
-                    state.isLoading -> SearchLoading(layout)
+                    state.isLoading -> SearchLoading(layout, channels = state.selectedChannel == null)
                     state.error != null -> SearchErrorState(state.error, onRetry)
                     state.selectedChannel == null && state.items.isEmpty() -> EmptyState(
                         title = if (state.query.isBlank()) "Start exploring" else "No channels found",
@@ -133,10 +133,12 @@ fun SearchContent(
 }
 
 @Composable
-private fun SearchLoading(layout: AdaptiveLayout) {
+private fun SearchLoading(layout: AdaptiveLayout, channels: Boolean) {
     if (layout == AdaptiveLayout.Compact) {
         Column(verticalArrangement = Arrangement.spacedBy(MediaSpacing.lg)) {
-            repeat(5) { LoadingMediaCard(compact = true) }
+            repeat(5) {
+                if (channels) LoadingChannelCard(compact = true) else LoadingMediaCard(compact = true)
+            }
         }
     } else {
         LazyVerticalGrid(
@@ -144,7 +146,11 @@ private fun SearchLoading(layout: AdaptiveLayout) {
             columns = GridCells.Adaptive(260.dp),
             horizontalArrangement = Arrangement.spacedBy(MediaSpacing.md),
             verticalArrangement = Arrangement.spacedBy(MediaSpacing.xl)
-        ) { items(8) { LoadingMediaCard() } }
+        ) {
+            items(8) {
+                if (channels) LoadingChannelCard() else LoadingMediaCard()
+            }
+        }
     }
 }
 
@@ -172,7 +178,7 @@ private fun ChannelResults(
             items(state.items, key = { "${it.providerId.value}:${it.id}" }) { channel ->
                 ChannelCard(channel, onClick, compact = true)
             }
-            item { PaginationFooter(state, onLoadMore) }
+            item { PaginationFooter(state, layout, onLoadMore) }
         }
     } else {
         LazyVerticalGrid(
@@ -186,7 +192,7 @@ private fun ChannelResults(
                 ChannelCard(channel, onClick, compact = false)
             }
             item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
-                PaginationFooter(state, onLoadMore)
+                PaginationFooter(state, layout, onLoadMore)
             }
         }
     }
@@ -246,7 +252,7 @@ private fun VideoResults(
             items(state.videos, key = { "${it.reference.provider.value}:${it.reference.externalId}" }) { video ->
                 VideoCard(video, onClick, compact = true)
             }
-            item { PaginationFooter(state, onLoadMore) }
+            item { PaginationFooter(state, layout, onLoadMore) }
         }
     } else {
         LazyVerticalGrid(
@@ -260,7 +266,7 @@ private fun VideoResults(
                 VideoCard(video, onClick, compact = false)
             }
             item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
-                PaginationFooter(state, onLoadMore)
+                PaginationFooter(state, layout, onLoadMore)
             }
         }
     }
@@ -304,10 +310,17 @@ private fun VideoCardText(video: MediaCatalogItem, modifier: Modifier = Modifier
 }
 
 @Composable
-private fun PaginationFooter(state: SearchUiState, onLoadMore: () -> Unit) {
+private fun PaginationFooter(state: SearchUiState, layout: AdaptiveLayout, onLoadMore: () -> Unit) {
     Box(Modifier.fillMaxWidth().padding(vertical = MediaSpacing.lg), contentAlignment = Alignment.Center) {
         when {
-            state.isLoadingMore -> CompactProgress()
+            state.isLoadingMore -> {
+                val placeholder = Modifier.widthIn(max = 300.dp)
+                if (state.selectedChannel == null) {
+                    LoadingChannelCard(placeholder, compact = layout == AdaptiveLayout.Compact)
+                } else {
+                    LoadingMediaCard(placeholder, compact = layout == AdaptiveLayout.Compact)
+                }
+            }
             state.canLoadMore -> PrimaryAction("Load more", onLoadMore, leading = {
                 Icon(Icons.Outlined.Explore, null, Modifier.size(18.dp))
             })

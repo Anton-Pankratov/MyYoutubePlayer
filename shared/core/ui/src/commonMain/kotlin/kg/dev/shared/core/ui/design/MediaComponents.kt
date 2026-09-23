@@ -3,6 +3,11 @@ package kg.dev.shared.core.ui.design
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -34,8 +39,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -44,6 +53,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.Shape
 import coil3.compose.AsyncImage
 
 @Composable
@@ -114,6 +124,8 @@ fun MediaThumbnail(
     circular: Boolean = false
 ) {
     val shape = if (circular) CircleShape else MediaShapes.thumbnail
+    var isLoading by remember(url) { mutableStateOf(!url.isNullOrBlank()) }
+    var hasFailed by remember(url) { mutableStateOf(false) }
     Box(
         modifier = modifier
             .aspectRatio(if (circular) 1f else aspectRatio)
@@ -121,7 +133,7 @@ fun MediaThumbnail(
             .background(MediaTheme.colors.surfaceInteractive),
         contentAlignment = Alignment.Center
     ) {
-        if (url.isNullOrBlank()) {
+        if (url.isNullOrBlank() || hasFailed) {
             Icon(
                 Icons.Outlined.BrokenImage,
                 contentDescription,
@@ -129,11 +141,17 @@ fun MediaThumbnail(
                 modifier = Modifier.size(if (circular) 28.dp else 32.dp)
             )
         } else {
+            if (isLoading) {
+                ShimmerPlaceholder(Modifier.matchParentSize(), shape)
+            }
             AsyncImage(
                 model = url,
                 contentDescription = contentDescription,
                 contentScale = ContentScale.Crop,
-                modifier = Modifier.matchParentSize()
+                modifier = Modifier.matchParentSize(),
+                onLoading = { isLoading = true; hasFailed = false },
+                onSuccess = { isLoading = false; hasFailed = false },
+                onError = { isLoading = false; hasFailed = true },
             )
         }
     }
@@ -206,28 +224,80 @@ private fun StatePanel(
 
 @Composable
 fun LoadingMediaCard(modifier: Modifier = Modifier, compact: Boolean = false) {
-    val base = MediaTheme.colors.surfaceElevated
+    val shimmer = rememberShimmerProgress()
     if (compact) {
         Row(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(MediaSpacing.md)) {
-            Box(Modifier.size(132.dp, 78.dp).clip(MediaShapes.thumbnail).background(base))
+            ShimmerPlaceholder(Modifier.size(132.dp, 78.dp), MediaShapes.thumbnail, shimmer)
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(MediaSpacing.xs)) {
-                SkeletonLine(0.9f)
-                SkeletonLine(0.65f)
-                SkeletonLine(0.4f)
+                SkeletonLine(0.9f, shimmer)
+                SkeletonLine(0.65f, shimmer)
+                SkeletonLine(0.4f, shimmer)
             }
         }
     } else {
         Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(MediaSpacing.sm)) {
-            Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(MediaShapes.thumbnail).background(base))
-            SkeletonLine(0.9f)
-            SkeletonLine(0.55f)
+            ShimmerPlaceholder(Modifier.fillMaxWidth().aspectRatio(16f / 9f), MediaShapes.thumbnail, shimmer)
+            SkeletonLine(0.9f, shimmer)
+            SkeletonLine(0.55f, shimmer)
         }
     }
 }
 
 @Composable
-private fun SkeletonLine(fraction: Float) {
-    Box(Modifier.fillMaxWidth(fraction).height(12.dp).clip(MediaShapes.small).background(MediaTheme.colors.surfaceInteractive))
+fun LoadingChannelCard(modifier: Modifier = Modifier, compact: Boolean = false) {
+    val shimmer = rememberShimmerProgress()
+    Row(
+        modifier.fillMaxWidth().padding(if (compact) MediaSpacing.sm else MediaSpacing.md),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(MediaSpacing.md),
+    ) {
+        ShimmerPlaceholder(Modifier.size(if (compact) 64.dp else 76.dp), CircleShape, shimmer)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(MediaSpacing.xs)) {
+            SkeletonLine(0.85f, shimmer)
+            SkeletonLine(0.65f, shimmer)
+            SkeletonLine(0.4f, shimmer)
+        }
+    }
+}
+
+@Composable
+private fun SkeletonLine(fraction: Float, shimmer: Float) {
+    ShimmerPlaceholder(Modifier.fillMaxWidth(fraction).height(12.dp), MediaShapes.small, shimmer)
+}
+
+@Composable
+private fun ShimmerPlaceholder(
+    modifier: Modifier,
+    shape: Shape,
+    progress: Float = rememberShimmerProgress(),
+) {
+    val colors = MediaTheme.colors
+    val base = colors.surfaceElevated
+    val highlight = if (colors.background.luminance() < 0.5f) colors.surfaceInteractive else colors.surface
+    Box(
+        modifier.clip(shape).drawBehind {
+            val start = Offset((progress * 2f - 1f) * size.width, 0f)
+            drawRect(
+                brush = Brush.linearGradient(
+                    colors = listOf(base, highlight, base),
+                    start = start,
+                    end = Offset(start.x + size.width, size.height),
+                )
+            )
+        }
+    )
+}
+
+@Composable
+private fun rememberShimmerProgress(): Float {
+    val transition = rememberInfiniteTransition(label = "Media loading")
+    val progress by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(1_250, easing = LinearEasing)),
+        label = "Shimmer position",
+    )
+    return progress
 }
 
 @Composable

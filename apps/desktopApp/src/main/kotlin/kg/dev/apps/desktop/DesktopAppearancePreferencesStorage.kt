@@ -13,7 +13,7 @@ class DesktopAppearancePreferencesStorage(
         load().also {
             it.setProperty(key, value)
             file.parentFile?.mkdirs()
-            file.outputStream().use(it::store)
+            file.outputStream().use { output -> it.store(output, null) }
         }
     }
 

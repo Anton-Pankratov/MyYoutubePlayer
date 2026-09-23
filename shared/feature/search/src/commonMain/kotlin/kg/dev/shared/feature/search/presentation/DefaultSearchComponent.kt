@@ -28,7 +28,7 @@ class DefaultSearchComponent(
     componentContext: ComponentContext,
     private val searchChannels: SearchChannelsUseCase,
     coroutineContext: CoroutineContext = Dispatchers.Default,
-    debounceMillis: Long = 500,
+    debounceMillis: Long = 250,
     private val onMediaSelected: (MediaCatalogItem) -> Unit = {}
 ) : SearchComponent, ComponentContext by componentContext {
     private val scope = CoroutineScope(SupervisorJob() + coroutineContext)

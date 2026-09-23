@@ -15,8 +15,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.PersonOutline
-import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material.icons.outlined.VideoLibrary
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Icon
@@ -98,7 +97,7 @@ fun SharedAppContent(
     val destinations = listOf(
         Destination(Configuration.Home, "Home", Icons.Outlined.Home, rootComponent::showHome),
         Destination(Configuration.Search, "Discover", Icons.Outlined.Search, rootComponent::showSearch),
-        Destination(Configuration.Profile, "Library", Icons.Outlined.FavoriteBorder, rootComponent::showProfile)
+        Destination(Configuration.Profile, "Library", Icons.Outlined.VideoLibrary, rootComponent::showProfile)
     )
 
     AppSurface(Modifier.fillMaxSize()) {
@@ -210,6 +209,12 @@ private fun AppNavigationRail(destinations: List<Destination>, activeConfigurati
         ) {
             Box(contentAlignment = Alignment.Center) { Text("L", style = MediaTheme.typography.sectionTitle) }
         }
+        Text(
+            "LUMA",
+            style = MediaTheme.typography.label,
+            color = MediaTheme.colors.textSecondary,
+            modifier = Modifier.padding(top = MediaSpacing.xs),
+        )
         Spacer(Modifier.height(MediaSpacing.xl))
         Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
             androidx.compose.foundation.layout.Column {
