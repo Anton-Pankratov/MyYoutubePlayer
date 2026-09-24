@@ -19,6 +19,30 @@ import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class LibraryComponentTest {
+    @Test fun searchTextUpdatesBeforeListFiltering() = runTest {
+        val lifecycle = LifecycleRegistry().also { it.onCreate() }
+        val repository = FakeSavedMediaRepository()
+        val component = DefaultLibraryComponent(
+            DefaultComponentContext(lifecycle), repository, FakeLibraryViewPreferencesRepository(), {},
+            StandardTestDispatcher(testScheduler),
+        )
+        repository.favoritesState.value = listOf(
+            media("youtube", "alpha", true, false, "Alpha"),
+            media("youtube", "beta", true, false, "Beta"),
+        )
+        advanceUntilIdle()
+
+        component.onSearchQueryChanged("Alpha")
+        component.onSearchQueryChanged("Beta")
+        val immediate = assertIs<LibraryUiState.Content>(component.state.value)
+        assertEquals("Beta", immediate.searchQuery)
+        assertEquals(2, immediate.favorites.size)
+
+        advanceUntilIdle()
+        assertEquals(listOf("Beta"), assertIs<LibraryUiState.Content>(component.state.value).favorites.map { it.title })
+        lifecycle.onDestroy()
+    }
+
     @Test fun recreatedComponentRestoresViewPreferencesButNotSearchQuery() = runTest {
         val repository = FakeSavedMediaRepository()
         val preferences = FakeLibraryViewPreferencesRepository()
@@ -78,24 +102,26 @@ class LibraryComponentTest {
         var content = assertIs<LibraryUiState.Content>(component.state.value)
         assertEquals("", content.searchQuery.trim()); assertEquals(SavedMediaFilter.All, content.filter); assertEquals(SavedMediaSort.RecentlySaved, content.sort)
         assertEquals(listOf("Beta", "Same"), content.favorites.map { it.title })
-        component.onSearchQueryChanged("  lOfI "); content = assertIs(component.state.value)
+        component.onSearchQueryChanged("  lOfI ")
+        assertEquals("  lOfI ", assertIs<LibraryUiState.Content>(component.state.value).searchQuery)
+        advanceUntilIdle(); content = assertIs(component.state.value)
         assertEquals(listOf(f), content.favorites); assertTrue(content.watchLater.isEmpty())
-        component.onSearchQueryChanged("missing"); content = assertIs(component.state.value)
+        component.onSearchQueryChanged("missing"); advanceUntilIdle(); content = assertIs(component.state.value)
         assertTrue(content.hasAnySavedMedia); assertTrue(content.favorites.isEmpty() && content.watchLater.isEmpty())
 
-        component.onSearchQueryChanged("same"); content = assertIs(component.state.value)
+        component.onSearchQueryChanged("same"); advanceUntilIdle(); content = assertIs(component.state.value)
         assertEquals(listOf(f.reference), content.favorites.map { it.reference })
         assertEquals(listOf(w.reference), content.watchLater.map { it.reference })
 
-        component.onSearchQueryChanged(""); component.onFilterSelected(SavedMediaFilter.All); content = assertIs(component.state.value)
+        component.onSearchQueryChanged(""); component.onFilterSelected(SavedMediaFilter.All); advanceUntilIdle(); content = assertIs(component.state.value)
         assertEquals(listOf("Beta", "Same"), content.favorites.map { it.title }); assertEquals(listOf("Beta", "Same"), content.watchLater.map { it.title })
-        component.onFilterSelected(SavedMediaFilter.WatchLater); content = assertIs(component.state.value)
+        component.onFilterSelected(SavedMediaFilter.WatchLater); advanceUntilIdle(); content = assertIs(component.state.value)
         assertEquals(listOf("Beta", "Same"), content.watchLater.map { it.title }); assertTrue(!content.showFavorites && content.showWatchLater)
-        component.onFilterSelected(SavedMediaFilter.Both); content = assertIs(component.state.value)
+        component.onFilterSelected(SavedMediaFilter.Both); advanceUntilIdle(); content = assertIs(component.state.value)
         assertEquals(listOf(b), content.favorites); assertTrue(!content.showWatchLater)
-        component.onFilterSelected(SavedMediaFilter.Favorites); component.onSortSelected(SavedMediaSort.TitleAscending); content = assertIs(component.state.value)
+        component.onFilterSelected(SavedMediaFilter.Favorites); component.onSortSelected(SavedMediaSort.TitleAscending); advanceUntilIdle(); content = assertIs(component.state.value)
         assertEquals(listOf("Beta", "Same"), content.favorites.map { it.title })
-        component.onSortSelected(SavedMediaSort.TitleDescending); content = assertIs(component.state.value)
+        component.onSortSelected(SavedMediaSort.TitleDescending); advanceUntilIdle(); content = assertIs(component.state.value)
         assertEquals(listOf("Same", "Beta"), content.favorites.map { it.title })
 
         component.onFilterSelected(SavedMediaFilter.Both); component.removeFavorite(b); advanceUntilIdle()
@@ -118,11 +144,12 @@ class LibraryComponentTest {
         val both = media("test", "both", true, true, "Ambient Lofi", "Author", 15, 30)
         repo.favoritesState.value = listOf(favorite, both); repo.watchState.value = listOf(watchLater, both); advanceUntilIdle()
         component.onSearchQueryChanged("  LOFI "); component.onFilterSelected(SavedMediaFilter.Favorites); component.onSortSelected(SavedMediaSort.TitleAscending)
+        advanceUntilIdle()
         val content = assertIs<LibraryUiState.Content>(component.state.value)
         assertEquals(listOf("Ambient Lofi", "Lofi Morning"), content.favorites.map { it.title })
         assertEquals(listOf("Ambient Lofi"), content.watchLater.map { it.title })
         assertEquals(0, repo.favoriteWrites.size); assertEquals(0, repo.watchWrites.size)
-        component.onFilterSelected(SavedMediaFilter.Both); assertEquals(listOf("Ambient Lofi"), assertIs<LibraryUiState.Content>(component.state.value).favorites.map { it.title })
+        component.onFilterSelected(SavedMediaFilter.Both); advanceUntilIdle(); assertEquals(listOf("Ambient Lofi"), assertIs<LibraryUiState.Content>(component.state.value).favorites.map { it.title })
         lifecycle.onDestroy()
     }
     @Test fun loadingContentErrorsActionsAndIdentityAreProviderQualified() = runTest {

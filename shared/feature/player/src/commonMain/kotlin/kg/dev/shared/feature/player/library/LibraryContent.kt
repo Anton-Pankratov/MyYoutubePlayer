@@ -41,7 +41,7 @@ fun LibraryContent(component: LibraryComponent, modifier: Modifier = Modifier, o
                 modifier.fillMaxSize().padding(MediaSpacing.lg),
                 verticalArrangement = Arrangement.spacedBy(MediaSpacing.lg),
             ) {
-                item(key = "search") {
+                item(key = "search", contentType = "search") {
                     OutlinedTextField(
                         content.searchQuery,
                         component::onSearchQueryChanged,
@@ -49,14 +49,14 @@ fun LibraryContent(component: LibraryComponent, modifier: Modifier = Modifier, o
                         label = { Text("Search saved media") },
                     )
                 }
-                item(key = "filters") {
+                item(key = "filters", contentType = "filters") {
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(MediaSpacing.sm)) {
                         items(SavedMediaFilter.entries) { filter ->
                             OutlinedButton(onClick = { component.onFilterSelected(filter) }) { Text(filter.label()) }
                         }
                     }
                 }
-                item(key = "sorts") {
+                item(key = "sorts", contentType = "sorts") {
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(MediaSpacing.sm)) {
                         items(SavedMediaSort.entries) { sort ->
                             OutlinedButton(onClick = { component.onSortSelected(sort) }) { Text(sort.label()) }
@@ -64,9 +64,9 @@ fun LibraryContent(component: LibraryComponent, modifier: Modifier = Modifier, o
                     }
                 }
                 when {
-                    !content.hasAnySavedMedia -> item { EmptyState("Library", "Nothing saved yet") }
+                    !content.hasAnySavedMedia -> item(contentType = "empty") { EmptyState("Library", "Nothing saved yet") }
                     content.favorites.isEmpty() && content.watchLater.isEmpty() ->
-                        item { EmptyState("No matches", "Try another search or filter") }
+                        item(contentType = "empty") { EmptyState("No matches", "Try another search or filter") }
                     else -> {
                         if (content.showFavorites) savedSection(
                             "Favorites", content.favorites, component::open, component::removeFavorite,
@@ -98,13 +98,14 @@ private fun LazyListScope.savedSection(
     empty: String,
     onAddToCollection: ((SavedMedia) -> Unit)?
 ) {
-    item(key = "heading:$title") {
+    item(key = "heading:$title", contentType = "heading") {
         Text(title, style = MediaTheme.typography.screenTitle, color = MediaTheme.colors.textPrimary)
     }
-    if (items.isEmpty()) item(key = "empty:$title") { EmptyState(title, empty) }
+    if (items.isEmpty()) item(key = "empty:$title", contentType = "empty") { EmptyState(title, empty) }
     else items(
         items,
         key = { "$title:${it.reference.provider.value}:${it.reference.externalId}" },
+        contentType = { "saved-media" },
     ) { item ->
         Row(
             Modifier.fillMaxWidth().clickable { open(item) }.padding(vertical = MediaSpacing.sm),

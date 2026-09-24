@@ -5,6 +5,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 sealed interface LibraryUiState {
@@ -42,13 +45,18 @@ class DefaultLibraryComponent(
     private val onMediaSelected: (SavedMedia) -> Unit,
     coroutineContext: kotlin.coroutines.CoroutineContext = kotlinx.coroutines.Dispatchers.Default
 ) : LibraryComponent, ComponentContext by componentContext {
+    private data class Inputs(
+        val favorites: List<SavedMedia> = emptyList(),
+        val watchLater: List<SavedMedia> = emptyList(),
+        val query: String = "",
+        val filter: SavedMediaFilter = SavedMediaFilter.All,
+        val sort: SavedMediaSort = SavedMediaSort.RecentlySaved,
+        val loaded: Boolean = false,
+    )
+
     private val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + coroutineContext)
     private val mutableState = kotlinx.coroutines.flow.MutableStateFlow<LibraryUiState>(LibraryUiState.Loading)
-    private var sourceFavorites = emptyList<SavedMedia>()
-    private var sourceWatchLater = emptyList<SavedMedia>()
-    private var query = ""
-    private var filter = SavedMediaFilter.All
-    private var sort = SavedMediaSort.RecentlySaved
+    private val inputs = kotlinx.coroutines.flow.MutableStateFlow(Inputs())
     override val state: StateFlow<LibraryUiState> = mutableState
 
     init {
@@ -61,65 +69,76 @@ class DefaultLibraryComponent(
             }
                 .catch { mutableState.value = LibraryUiState.Error }
                 .collect { (favorites, watchLater, preferences) ->
-                    sourceFavorites = favorites
-                    sourceWatchLater = watchLater
-                    filter = preferences.filter
-                    sort = preferences.sort
-                    publishContent()
+                    inputs.update {
+                        it.copy(
+                            favorites = favorites,
+                            watchLater = watchLater,
+                            filter = preferences.filter,
+                            sort = preferences.sort,
+                            loaded = true,
+                        )
+                    }
                 }
+        }
+        scope.launch {
+            inputs.filter { it.loaded }.collectLatest { snapshot ->
+                val content = deriveContent(snapshot)
+                if (inputs.value === snapshot) mutableState.value = content
+            }
         }
     }
 
     override fun open(media: SavedMedia) = onMediaSelected(media)
     override fun removeFavorite(media: SavedMedia) { scope.launch { repository.setFavorite(media.toCatalogItem(), false) } }
     override fun removeWatchLater(media: SavedMedia) { scope.launch { repository.setWatchLater(media.toCatalogItem(), false) } }
-    override fun onSearchQueryChanged(query: String) { this.query = query; publishContent() }
+    override fun onSearchQueryChanged(query: String) {
+        inputs.update { it.copy(query = query) }
+        mutableState.update { current ->
+            if (current is LibraryUiState.Content) current.copy(searchQuery = query) else current
+        }
+    }
     override fun onFilterSelected(filter: SavedMediaFilter) {
-        this.filter = filter
-        publishContent()
+        inputs.update { it.copy(filter = filter) }
         scope.launch {
             runCatching { viewPreferences.setFilter(filter) }
                 .onFailure {
-                    this@DefaultLibraryComponent.filter = viewPreferences.preferences.value.filter
-                    publishContent()
+                    inputs.update { it.copy(filter = viewPreferences.preferences.value.filter) }
                 }
         }
     }
     override fun onSortSelected(sort: SavedMediaSort) {
-        this.sort = sort
-        publishContent()
+        inputs.update { it.copy(sort = sort) }
         scope.launch {
             runCatching { viewPreferences.setSort(sort) }
                 .onFailure {
-                    this@DefaultLibraryComponent.sort = viewPreferences.preferences.value.sort
-                    publishContent()
+                    inputs.update { it.copy(sort = viewPreferences.preferences.value.sort) }
                 }
         }
     }
 
-    private fun publishContent() {
-        val normalizedQuery = query.trim().lowercase()
+    private fun deriveContent(snapshot: Inputs): LibraryUiState.Content {
+        val normalizedQuery = snapshot.query.trim().lowercase()
         fun matches(item: SavedMedia) = normalizedQuery.isEmpty() || item.title.lowercase().contains(normalizedQuery) || item.authorTitle?.lowercase()?.contains(normalizedQuery) == true
-        fun matchesFilter(item: SavedMedia) = when (filter) {
+        fun matchesFilter(item: SavedMedia) = when (snapshot.filter) {
             SavedMediaFilter.All -> item.isFavorite || item.isWatchLater
             SavedMediaFilter.Favorites -> item.isFavorite
             SavedMediaFilter.WatchLater -> item.isWatchLater
             SavedMediaFilter.Both -> item.isFavorite && item.isWatchLater
         }
         fun sortItems(items: List<SavedMedia>) = items.filter(::matches).filter(::matchesFilter).sortedWith(
-            when (sort) {
+            when (snapshot.sort) {
                 SavedMediaSort.RecentlySaved -> compareByDescending<SavedMedia> { maxOf(it.favoriteAddedAtEpochMs ?: Long.MIN_VALUE, it.watchLaterAddedAtEpochMs ?: Long.MIN_VALUE) }
                 SavedMediaSort.TitleAscending -> compareBy<SavedMedia> { it.title.lowercase() }
                 SavedMediaSort.TitleDescending -> compareByDescending<SavedMedia> { it.title.lowercase() }
             }.thenBy { it.title.lowercase() }.thenBy { it.reference.provider.value }.thenBy { it.reference.externalId }
         )
-        val both = filter == SavedMediaFilter.Both
-        mutableState.value = LibraryUiState.Content(
-            favorites = sortItems(sourceFavorites), watchLater = if (both) emptyList() else sortItems(sourceWatchLater),
-            searchQuery = query, filter = filter, sort = sort,
-            hasAnySavedMedia = sourceFavorites.isNotEmpty() || sourceWatchLater.isNotEmpty(),
-            showFavorites = filter != SavedMediaFilter.WatchLater,
-            showWatchLater = filter == SavedMediaFilter.All || filter == SavedMediaFilter.WatchLater
+        val both = snapshot.filter == SavedMediaFilter.Both
+        return LibraryUiState.Content(
+            favorites = sortItems(snapshot.favorites), watchLater = if (both) emptyList() else sortItems(snapshot.watchLater),
+            searchQuery = snapshot.query, filter = snapshot.filter, sort = snapshot.sort,
+            hasAnySavedMedia = snapshot.favorites.isNotEmpty() || snapshot.watchLater.isNotEmpty(),
+            showFavorites = snapshot.filter != SavedMediaFilter.WatchLater,
+            showWatchLater = snapshot.filter == SavedMediaFilter.All || snapshot.filter == SavedMediaFilter.WatchLater
         )
     }
 }
