@@ -18,8 +18,8 @@ class App : Application() {
             androidContext(this@App)
             modules(commonModules() + playerFeatureModule + androidModule())
         }.koin
-        val host = koin.get<AndroidServiceDirectPlaybackHost>()
-        val coordinator = koin.get<DirectAudioSessionCoordinator>()
+        val host by lazy { koin.get<AndroidServiceDirectPlaybackHost>() }
+        val coordinator by lazy { koin.get<DirectAudioSessionCoordinator>() }
         AndroidDirectAudioCommandRegistry.callbacks = object : DirectPlaybackCommandCallbacks {
             override fun play() = host.play()
             override fun pause() = host.pause()

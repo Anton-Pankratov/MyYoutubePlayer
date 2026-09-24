@@ -45,12 +45,15 @@ class MainActivity : ComponentActivity() {
         lateinit var root: DefaultRootComponent<SearchComponent>
         root = DefaultRootComponent(
             componentContext = defaultComponentContext(),
-            mediaOpenCoordinator = get<MediaOpenCoordinator>(),
+            mediaOpenCoordinator = object : MediaOpenCoordinator {
+                override suspend fun open(item: MediaCatalogItem) =
+                    this@MainActivity.get<MediaOpenCoordinator>().open(item)
+            },
             canRetainEligibleDirectSession = { directAudioHost.capabilities.supportsBackgroundPlayback },
             onEligiblePlayerUiDetached = { directAudioHost.detachUi() },
-            onForegroundPlaybackRequired = directAudioCoordinator::stopForForegroundPlayback,
-            onBeforeQueueSelection = directAudioCoordinator::persistProgressForQueueSelection,
-            onStopPlayback = directAudioCoordinator::stop,
+            onForegroundPlaybackRequired = { directAudioCoordinator.stopForForegroundPlayback() },
+            onBeforeQueueSelection = { directAudioCoordinator.persistProgressForQueueSelection() },
+            onStopPlayback = { directAudioCoordinator.stop() },
             searchComponentFactory = { childContext ->
                 DefaultSearchComponent(childContext, get<SearchChannelsUseCase>(), onMediaSelected = root::openMedia)
             },

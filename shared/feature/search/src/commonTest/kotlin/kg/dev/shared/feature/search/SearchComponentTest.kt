@@ -26,6 +26,23 @@ import kotlin.test.assertTrue
 @OptIn(ExperimentalCoroutinesApi::class)
 class SearchComponentTest {
     @Test
+    fun initialDefaultQueryStartsWithoutTypingDelay() = runTest {
+        val repository = RecordingRepository()
+        val lifecycle = LifecycleRegistry().also { it.onCreate() }
+        DefaultSearchComponent(
+            DefaultComponentContext(lifecycle),
+            SearchChannelsUseCase(repository),
+            StandardTestDispatcher(testScheduler),
+            debounceMillis = 500,
+        )
+
+        runCurrent()
+
+        assertEquals(listOf("Education"), repository.queries)
+        lifecycle.onDestroy()
+    }
+
+    @Test
     fun videoSelectionIsEmittedToRootOwnedMediaCallback() = runTest {
         val lifecycle = LifecycleRegistry().also { it.onCreate() }
         var selected: MediaCatalogItem? = null

@@ -28,20 +28,18 @@ import kg.dev.videoplayer.localmedia.AndroidLocalMediaImporter
 import kg.dev.videoplayer.localmedia.LocalMediaImportResult
 import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
+import org.koin.core.context.GlobalContext
 
 @Composable
 fun MainScreen(rootComponent: RootComponent<SearchComponent>, appearancePreferences: AppearancePreferences) {
     val historyRepository = koinInject<HistoryRepository>()
-    val localMediaImporter = koinInject<AndroidLocalMediaImporter>()
-    val savedMediaRepository = koinInject<SavedMediaRepository>()
-    val libraryViewPreferences = koinInject<LibraryViewPreferencesRepository>()
-    val mediaCollectionRepository = koinInject<MediaCollectionRepository>()
+    val koin = GlobalContext.get()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val localVideoPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
         scope.launch {
-            when (val result = localMediaImporter.import(uri)) {
+            when (val result = koin.get<AndroidLocalMediaImporter>().import(uri)) {
                 is LocalMediaImportResult.Success -> rootComponent.openMedia(result.media)
                 is LocalMediaImportResult.Failure -> Toast.makeText(context, result.message, Toast.LENGTH_SHORT).show()
             }
@@ -59,7 +57,14 @@ fun MainScreen(rootComponent: RootComponent<SearchComponent>, appearancePreferen
             )
         },
         libraryComponentFactory = { componentContext, selected, playAll ->
-            DefaultLibraryHubComponent(componentContext, savedMediaRepository, libraryViewPreferences, mediaCollectionRepository, selected, onPlayAll = playAll)
+            DefaultLibraryHubComponent(
+                componentContext,
+                koin.get<SavedMediaRepository>(),
+                koin.get<LibraryViewPreferencesRepository>(),
+                koin.get<MediaCollectionRepository>(),
+                selected,
+                onPlayAll = playAll,
+            )
         },
         onImportLocalMedia = { localVideoPicker.launch(arrayOf("video/*")) },
         appearancePreferences = appearancePreferences,

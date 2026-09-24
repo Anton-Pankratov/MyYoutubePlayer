@@ -32,6 +32,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -261,7 +262,7 @@ fun LoadingChannelCard(modifier: Modifier = Modifier, compact: Boolean = false) 
 }
 
 @Composable
-private fun SkeletonLine(fraction: Float, shimmer: Float) {
+private fun SkeletonLine(fraction: Float, shimmer: State<Float>) {
     ShimmerPlaceholder(Modifier.fillMaxWidth(fraction).height(12.dp), MediaShapes.small, shimmer)
 }
 
@@ -269,14 +270,14 @@ private fun SkeletonLine(fraction: Float, shimmer: Float) {
 private fun ShimmerPlaceholder(
     modifier: Modifier,
     shape: Shape,
-    progress: Float = rememberShimmerProgress(),
+    progress: State<Float> = rememberShimmerProgress(),
 ) {
     val colors = MediaTheme.colors
     val base = colors.surfaceElevated
     val highlight = if (colors.background.luminance() < 0.5f) colors.surfaceInteractive else colors.surface
     Box(
         modifier.clip(shape).drawBehind {
-            val start = Offset((progress * 2f - 1f) * size.width, 0f)
+            val start = Offset((progress.value * 2f - 1f) * size.width, 0f)
             drawRect(
                 brush = Brush.linearGradient(
                     colors = listOf(base, highlight, base),
@@ -289,15 +290,14 @@ private fun ShimmerPlaceholder(
 }
 
 @Composable
-private fun rememberShimmerProgress(): Float {
+private fun rememberShimmerProgress(): State<Float> {
     val transition = rememberInfiniteTransition(label = "Media loading")
-    val progress by transition.animateFloat(
+    return transition.animateFloat(
         initialValue = 0f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(tween(1_250, easing = LinearEasing)),
         label = "Shimmer position",
     )
-    return progress
 }
 
 @Composable

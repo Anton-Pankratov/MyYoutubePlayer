@@ -44,9 +44,14 @@ class DefaultSearchComponent(
             }
         })
         scope.launch {
+            var isFirstQuery = true
             query
                 .map(String::trim)
-                .debounce(debounceMillis)
+                .debounce { normalizedQuery ->
+                    val delayMillis = if (isFirstQuery && normalizedQuery == DEFAULT_QUERY) 0 else debounceMillis
+                    isFirstQuery = false
+                    delayMillis
+                }
                 .distinctUntilChanged()
                 .collectLatest(::loadFirstPage)
         }
